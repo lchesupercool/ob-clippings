@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中译-5.4. Commit Log (clog)  Hironobu SUZUKI @ InterDB</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<h1>5.4. Commit Log (clog)</h1>
+<p>PostgreSQL 将 transaction 的状态保存在 <strong>Commit Log</strong> 中。Commit Log（通常称为 <strong>clog</strong>）==被分配在共享内存中，并在整个 transaction 处理过程中被使用。==</p>
+<p>本节描述 PostgreSQL 中 transaction 的状态、clog 如何运作以及 clog 的维护。</p>
+<h2>5.4.1 Transaction Status</h2>
+<p>PostgreSQL 定义了四种 transaction 状态：IN_PROGRESS、COMMITTED、ABORTED 和 SUB_COMMITTED。</p>
+<p>其中前三种状态从字面即可理解。例如，当一个 transaction 正在进行时，其状态为 IN_PROGRESS。</p>
+<p>SUB_COMMITTED 用于 sub-transaction，本文中略去对其的描述。</p>
+<h2>5.4.2. How Clog Performs</h2>
+<p>clog 由共享内存中的一个或多个 ==8 KB 页== 组成。它在逻辑上构成一个数组，其中==数组的索引对应各个 transaction id==，数组中的每一项保存对应 transaction id 的状态。图 5.7 展示了 clog 及其工作方式。</p>
+<p><img alt="T1：txid 200 提交；txid 200 的状态从 IN_PROGRESS 变为 COMMITTED。
+T2：txid 201 中止；txid 201 的状态从 IN_PROGRESS 变为 ABORTED。" src="https://www.interdb.jp/pg/pgsql05/fig-5-07.png" /></p>
+<p>图 5.7。clog 的工作方式。T1：txid 200 commit；txid 200 的状态从 IN_PROGRESS 变为 COMMITTED。T2：txid 201 abort；txid 201 的状态从 IN_PROGRESS 变为 ABORTED。</p>
+<p>当当前的 txid 向前推进，而 clog 已经无法存储它时，就会追加一个新页。</p>
+<p>当需要某个 transaction 的状态时，会调用内部函数。这些函数读取 clog 并返回所请求 transaction 的状态。（另见</p>
+<pre><code class="language-nginx">Section 5.7.1.1
+</code></pre>
+<p>中的 “Hint Bits”。）</p>
+<h2>5.4.3. Maintenance of the Clog</h2>
+<p>当 PostgreSQL 关闭，或每次 checkpoint 进程运行时，clog 的数据会被写入保存在 <em>pg_xact</em> 子目录中的文件。（注意 pg_xact 在 9.6 或更早版本中被称为 <em>pg_clog</em>。）==这些文件被命名为 ‘0000’、‘0001’==，等等。</p>
+<p>==文件的最大大小为 256 KB==。例如，如果 clog 使用了八页（从第一页到第八页，总大小为 64 KB），其数据会被写入 ‘0000’（64 KB）。如果 clog 使用了 37 页（296 KB），其数据会被写入 ‘0000’ 和 ‘0001’，其大小分别为 256 KB 和 40 KB。</p>
+<p>当 PostgreSQL 启动时，pg_xact 文件中保存的数据会被加载以初始化 clog。</p>
+<p>clog 的大小会不断增长，因为每当 clog 被填满时都会追加一个新页。然而，并非 clog 中的所有数据都是必要的。Vacuum 处理（在</p>
+<pre><code>Chapter 6
+</code></pre>
+<p>中描述）会定期移除这些旧数据（包括 clog 页和文件）。</p>
+<p>有关移除 clog 数据的细节，请参阅</p>
+<pre><code>Section 6.4
+</code></pre>
+<p>。</p>
+</body>
+</html>

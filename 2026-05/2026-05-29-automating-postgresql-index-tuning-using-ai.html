@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026-05-29-automating-postgresql-index-tuning-using-ai</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>title: Automating PostgreSQL Index Tuning Using AI
+source: https://stormatics.tech/blogs/automating-postgresql-index-tuning-using-ai
+saved: 2026-05-29 16:35:00 +0800
+author: Warda Bibi
+published: 2026-05-28
+images: 0</p>
+<hr />
+<h2><a href="https://stormatics.tech/blogs/automating-postgresql-index-tuning-using-ai" title="Automating PostgreSQL Index Tuning Using AI">Automating PostgreSQL Index Tuning Using AI</a></h2>
+<p>If you have a slow query, one of the obvious moves is to add an index. So you look at the WHERE clause, pick a column, run CREATE INDEX, and test again. Sometimes it helps, often it doesn’t. And now you have an index sitting there, not helping reads, but slowing down every write, because INSERT, UPDATE, and DELETE all have to maintain it. And it gets worse as your system grows.</p>
+<p>Five queries are manageable. You can reason about column choices, test combinations, and check EXPLAIN output. When you are dealing with fifty queries across a dozen tables,  you are evaluating hundreds of possible column combinations manually, each one potentially breaking something in production if you get the locking wrong. </p>
+<h2>Why index tuning is harder than it looks</h2>
+<p>Most people know that indexes speed up reads. Fewer people think carefully about what actually happens when they add one.</p>
+<p>First, PostgreSQL might not use it. The planner compares strategies and picks the cheapest one. If your query touches a large fraction of the table, a sequential scan might actually be cheaper than an index scan. Creating the index doesn’t change that math, it just adds overhead.</p>
+<p>Second, even with CONCURRENTLY, creating an index on a busy table isn’t free. It competes with your workload, can cause replication lag, and sometimes it times out. People don’t plan for this until it happens at 2am.</p>
+<p>Third, and this one is subtle, adding the wrong index is sometimes worse than adding nothing. You pay the write overhead with zero read benefit.</p>
+<p>The harder part is column ordering. A composite index on (status, customer_id) and one on (customer_id, status) are completely different things. The planner’s decision about which one to use depends on your data distribution, which conditions appear in your WHERE clause, and how selective each column is. Getting this wrong by hand is easy. Verifying it without touching production is the real challenge.</p>
+<h2>The idea behind automation</h2>
+<p>When a problem is repetitive, time-consuming, and mostly mechanical, you automate it. That’s what pg_index_search does. It takes the trial-and-error part of index tuning and turns it into a structured pipeline.</p>
+<p>The tool reads your actual query workload from pg_stat_statements, figures out which columns are worth indexing, generates candidate indexes, and then, critically, tests them without writing anything to disk. You get back CREATE INDEX statements with measured cost improvements. You decide what to apply and when.</p>
+<p>Here’s how each part works.</p>
+<h3>Step 1: Start with what’s actually slow</h3>
+<p>The tool pulls queries from pg_stat_statements with a few filters. </p>
+<ol>
+<li>It ignores one-off queries (fewer than 50 calls is not enough data to be meaningful).</li>
+<li>It skips anything already running in under 5ms (indexes won’t move the needle there).</li>
+<li>It sorts by total_exec_time, not mean latency.</li>
+</ol>
+<p>That last part matters more than it sounds. A query averaging 50ms that runs 10,000 times a day is a much bigger problem than a 2-second query that runs once. Optimizing for total impact rather than individual query speed is how you actually move the metric that matters.</p>
+<p>Each query gets a weight based on call count times average execution time. That weight flows through the rest of the pipeline, so the algorithm keeps its focus on what will reduce total database load.</p>
+<h3>Step 2: Parse the queries to find indexable columns</h3>
+<p>pg_stat_statements stores queries with placeholders like $1, $2. The planner needs real values to estimate selectivity, so the tool replaces those placeholders with representative values pulled from pg_stats (most common values first, histogram data as fallback).</p>
+<p>Then it parses each query into an AST using pglast, which uses PostgreSQL’s own parser under the hood. From there it extracts columns from WHERE clauses, JOINs, ORDER BY, and HAVING. Columns that only appear in the SELECT list are ignored as they don’t help with index selection.</p>
+<p>For a query like:</p>
+<pre><code>SELECT user_id, event_type, created_at  
+FROM events  
+WHERE tenant_id = $1  
+  AND event_type = 'feature_use'  
+  AND created_at &gt; now() - interval '30 days'  
+ORDER BY created_at;
+</code></pre>
+<p>The output is: events: [tenant_id, event_type, created_at]. That’s the input to the next step.</p>
+<h3>Step 3: Generate candidate indexes</h3>
+<p>With the relevant columns identified per table, the tool generates all single-column indexes, all two-column combinations, and all three-column combinations. Existing indexes are filtered out. Very wide columns (avg_width over 40 bytes) are excluded since indexing them is usually impractical.</p>
+<p>For the events example above, you would get candidates like </p>
+<pre><code>(tenant_id), (event_type),(created_at)  
+(tenant_id, event_type), (tenant_id, created_at), (event_type, created_at)
+</code></pre>
+<p>and the three-column composite. One honest limitation here: column ordering within each combination is fixed. The tool generates (tenant_id, event_type) but not (event_type, tenant_id). For many cases this doesn’t matter. For some, especially mixed equality-and-range queries, it does. That gap is exactly where the LLM optimizer comes in, which we’ll get to.</p>
+<h3>Step 4: Test everything safely with HypoPG</h3>
+<p>This is the part that makes the whole approach production-safe.</p>
+<p>Instead of creating real indexes to test them, the tool uses HypoPG, a PostgreSQL extension that creates hypothetical indexes entirely in memory. These fake indexes hook directly into the planner, so when you run EXPLAIN, the planner treats them as if they exist and uses real table statistics to estimate costs.</p>
+<p>The loop looks like this: create a hypothetical index, run EXPLAIN, record the cost, and clear the index. For every candidate. Results are cached so the same combination isn’t re-evaluated.</p>
+<p>There are no disk writes or table locks and there is definitely no impact on live traffic. You can test any combination of columns on any table in your production database during business hours, and nothing will change except the planner’s internal state for the duration of an EXPLAIN call. The weighted cost formula is:</p>
+<p><strong>Σ (cost × calls × avg_time)</strong></p>
+<p>across all queries. So, indexes that benefit high-frequency, high-latency queries score better than those that help rare queries slightly.</p>
+<h3>Step 5: Find the best combination with greedy search</h3>
+<p>Testing indexes individually is straightforward but finding the best combination is the hard part.</p>
+<p>If you have 50 candidate indexes, there are 2^50 possible subsets to evaluate. That’s roughly a quadrillion combinations, which is not practical.</p>
+<p>The tool uses a greedy approach instead. In the first round, it tries every candidate individually and picks the one with the best objective score. In the second round, it tries adding each remaining candidate on top of the winner. It keeps going until no candidate improves cost by at least 10%, or until it hits a time or storage budget.The objective function is :</p>
+<p><strong>log(query_cost) + 2 × log(total_space).</strong></p>
+<p>Using logarithms matters as it prevents the algorithm from chasing large absolute numbers. A drop from 1,000,000 to 500,000 and a drop from 100 to 50 are the same relative improvement, and log() treats them that way. The 2× multiplier on storage means large indexes need to justify themselves with meaningful query improvement to make the cut.</p>
+<p>In practice, on a 18-million-row SaaS-style database, this produced an overall cost reduction from 3.6 billion to 304 million, about a 12x improvement, with a total index size of roughly 55 KB. That index size is tiny because indexes only store the indexed columns, not the full rows. The 874 MB events table has a 55 KB index that changes query cost by an order of magnitude.</p>
+<h3>The output</h3>
+<p>The output is ready-to-run SQL. Nothing is applied automatically.</p>
+<pre><code>SUMMARY  
+  Recommendations: 2  
+  Base cost:       4175.8  
+  New cost:        33.2  
+  Improvement:     125.7x  
+  Total index size: 1.3 MB
+</code></pre>
+<p>RECOMMENDED INDEXES</p>
+<p>[1] CREATE INDEX ON orders<br />
+    USING btree (customer_id)<br />
+    Size: 457 kB<br />
+    Standalone: 99.6x (4175 → 41)<br />
+    Stacked:    99.6x (4175 → 41)</p>
+<p>[2] CREATE INDEX ON orders<br />
+    USING btree (status, customer_id)<br />
+    Size: 800 kB<br />
+    Standalone: 1.5x (4175 → 2727)<br />
+    Stacked:    1.3x (41 → 33)</p>
+<p>Two numbers per index tell you what you actually need to know. Standalone improvement is what that index does on its own. Stacked improvement is what it adds once the prior indexes are already in place. Index 2 looks weak on its own, 1.5x, but on top of index 1, it still contributes a 1.3x improvement. Whether that’s worth 800 KB of storage is your call.</p>
+<p>The improvement is a multiplier (base_cost ÷ new_cost), not a percentage. A 125x improvement means the planner estimates 125 times less total work, not 125% less.</p>
+<p>Also worth noting: some queries in the output show 1.0x improvement. The tool didn’t recommend indexes for them and that’s intentional. Over-indexing has real costs, and the scoring function is designed to avoid it.</p>
+<h3>Where the greedy algorithm falls short and where the LLM picks up</h3>
+<p>The greedy DTA approach is fast, predictable, and handles most cases well. But it has structural blind spots.</p>
+<ul>
+<li>Column ordering is one. The algorithm generates combinations so (status, customer_id) might never be tried if (customer_id, status) came out of the combination generator first. For queries with a mix of equality and range conditions, the order can meaningfully change which rows the index eliminates first.</li>
+<li>Partial indexes are another. The tool doesn’t generate</li>
+</ul>
+<pre><code>CREATE INDEX ON orders (customer_id) WHERE status = 'pending'
+</code></pre>
+<p>A partial index like that would be smaller and faster for queries that always filter on that status value, but it’s outside what the combination generator can produce.</p>
+<ul>
+<li>Expression indexes fall into the same gap. lower(email) as an index expression isn’t something the algorithm considers.</li>
+</ul>
+<p>The LLM optimizer handles these. It takes the query and its EXPLAIN plan, sends them to Claude or GPT with a history of previous attempts, and gets back structured index suggestions that go beyond column combinations. Each suggestion is validated the same way, through HypoPG and EXPLAIN, so nothing is trusted without measurement.</p>
+<p>The iterative loop tracks the best 5 attempts and stops after 5 consecutive rounds without improvement. After 3 failed attempts, the prompt explicitly asks for less obvious suggestions, and the temperature goes up to 1.2 to get a more varied output.</p>
+<p>The practical workflow: run DTA first across the whole workload. Then, on queries where DTA’s result is underwhelming or where you suspect column ordering matters, run LLM mode on that specific query. Please note that LLMs are complementary in this process, not alternatives.</p>
+<h3>How to run it:</h3>
+<pre><code>git clone https://github.com/WardaBibi/pg_index_search  
+cd pg_index_search  
+uv pip install -e .  
+On your database:
+</code></pre>
+<p>CREATE EXTENSION hypopg;<br />
+CREATE EXTENSION pg_stat_statements;<br />
+ANALYZE;</p>
+<p>Then point it at your database:</p>
+<pre><code># Automatic workload mode  
+uv run python main.py &quot;postgresql://user@host/mydb&quot;
+</code></pre>
+<h1>Specific query</h1>
+<p>uv run python main.py “postgresql://user@host/mydb” \<br />
+  –queries “SELECT * FROM orders WHERE customer_id = 5”</p>
+<h1>LLM mode</h1>
+<p>export ANTHROPIC_API_KEY=”sk-ant-…”<br />
+uv run python main.py “postgresql://user@host/mydb” \<br />
+  –method llm \<br />
+  –queries “SELECT * FROM orders WHERE customer_id = 5 AND status = ‘pending'”</p>
+<p>Run ANALYZE before using the tool so the planner has current statistics. After applying any recommended index, run EXPLAIN ANALYZE to confirm what actually happens during execution, planner estimates are good but not identical to runtime behavior, especially if your data distribution shifts.</p>
+<h3>The thing worth internalizing</h3>
+<p>Manual index tuning has a hard ceiling. It works when you have a handful of queries and time to reason through each one. It breaks down when you have 50+ queries across multiple tables, when your workload changes week to week, and when you need to validate changes without risking a production incident.</p>
+<p>The combination of HypoPG simulation and workload-weighted scoring changes the constraint. You go from “let me guess and check” to “here’s what the planner actually prefers, measured against your real workload.”  You are still the one deciding what to apply and when. The tool just replaces the guessing.</p>
+<p>The repo is at <a href="http://github.com/WardaBibi/pg_index_search">github.com/WardaBibi/pg_index_search</a>.</p>
+</body>
+</html>

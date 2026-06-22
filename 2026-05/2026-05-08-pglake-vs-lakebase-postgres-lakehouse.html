@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026-05-08-pglake-vs-lakebase-postgres-lakehouse</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>title: "pg_lake vs Lakebase: Two Very Different Things Called “Postgres + Lakehouse”"
+author: "The Build"
+source: "https://thebuild.com/blog/2026/05/08/pglake-vs-lakebase-two-very-different-things-called-postgres-lakehouse/"
+published: "2026-05-08"
+saved: "2026-05-09 19:45:21"
+tags:
+  - clipping
+  - postgres
+  - lakehouse
+  - pglake
+  - lakebase</p>
+<hr />
+<h1>pg_lake vs Lakebase: Two Very Different Things Called “Postgres + Lakehouse”</h1>
+<p>Source: <a href="https://thebuild.com/blog/2026/05/08/pglake-vs-lakebase-two-very-different-things-called-postgres-lakehouse/">pg_lake vs Lakebase: Two Very Different Things Called “Postgres + Lakehouse”</a><br />
+Category: PostgreSQL</p>
+<p><img alt="" src="../../assets/pglake-vs-lakebase-postgres-lakehouse/pglake-vs-lakebase-postgres-lakehouse-01.png" /></p>
+<p>Snowflake and Databricks are now both selling something called PostgreSQL, both pitched at the same general use case (“the operational database next to your lakehouse”), and both with the word “lake” in the product name. Snowflake calls theirs <code>pg_lake</code> (a set of open-source extensions, plus the managed Snowflake Postgres service that wraps them). Databricks calls theirs <strong>Lakebase</strong> (a managed service built on the Neon engine they acquired in 2025).</p>
+<p>The marketing is similar enough that it is easy to assume the architectures are similar. They are not. They are, in fact, almost opposites — one keeps PostgreSQL exactly the way you know it and grafts a lakehouse access layer onto the side, the other keeps the PostgreSQL programming surface but replaces the storage subsystem entirely. Which one is right for any given workload depends on details that the marketing materials cheerfully do not address.</p>
+<p>This post pulls them apart and looks at where the queries actually execute, what survives of PostgreSQL’s transactional model, and where each one stops being PostgreSQL in any meaningful sense.</p>
+<h2>The Short Version</h2>
+<p><code>pg_lake</code> is <strong>PostgreSQL extended outward</strong>. Postgres is still the canonical, unmodified-binary Postgres you know. Heap tables still live in heap files, MVCC still works the way it always has, WAL still goes to local disk. What <code>pg_lake</code> adds is the ability to define Iceberg tables — backed by Parquet files in object storage — and to query and write them as if they were native, with PostgreSQL itself acting as the Iceberg catalog. Heavy analytical scans get delegated to a sidecar process running DuckDB.</p>
+<p><strong>Lakebase</strong> is <strong>PostgreSQL with the storage stack replaced</strong>. The compute node is a Postgres binary (with Neon’s patches), but its WAL goes over the network to a quorum of safekeepers, and its pages come from a separate pageserver process that materializes them on demand from WAL plus base images, with object storage as the cold tier. There is no local heap file. There is no <code>pg_wal</code> directory in the conventional sense. From the SQL surface, it looks identical to upstream Postgres. From the operational surface, it is something quite different.</p>
+<p>You can already see why these are different bets. One says “Postgres should reach into the lakehouse.” The other says “Postgres’s storage should <em>be</em> a lakehouse-shaped storage system.”</p>
+<h2>pg_lake: Postgres as Iceberg Catalog</h2>
+<p>The architecture, simplified:</p>
+<pre><code class="language-mermaid">flowchart LR
+    Client[&quot;psql / app&quot;] --&gt;|&quot;libpq&quot;| PG[&quot;PostgreSQL backend&lt;br/&gt;(unmodified)&quot;]
+    PG --&gt;|&quot;heap I/O&quot;| Heap[(&quot;Heap files&lt;br/&gt;(local disk)&quot;)]
+    PG --&gt;|&quot;WAL&quot;| WAL[(&quot;pg_wal&lt;br/&gt;(local disk)&quot;)]
+    PG --&gt;|&quot;catalog ops&quot;| Catalog[&quot;pg_lake catalog&lt;br/&gt;(in PG's catalog tables)&quot;]
+    PG --&gt;|&quot;foreign scan&quot;| Sidecar[&quot;pgduck_server&lt;br/&gt;(DuckDB)&quot;]
+    Sidecar --&gt;|&quot;S3 GET/PUT&lt;br/&gt;Parquet&quot;| Obj[(&quot;Object storage&lt;br/&gt;Iceberg tables&quot;)]
+    Catalog -.-&gt;|&quot;manifest pointers&quot;| Obj
+</code></pre>
+<p>The components, in plain terms:</p>
+<ul>
+<li>The <strong>PostgreSQL backend</strong> is exactly what you’d run today. Same binary, same <code>postgresql.conf</code>, same MVCC, same WAL, same everything. Heap tables, B-tree indexes, GIN, GiST — all unchanged.</li>
+<li>The <strong>pg_lake extension family</strong> is a stack of about a dozen extensions: <code>pg_lake_table</code> (a foreign data wrapper for lake files), <code>pg_lake_iceberg</code> (Iceberg-specific metadata handling), <code>pg_lake_engine</code> (shared internals), <code>pg_extension_base</code> (a foundation layer), and helpers like <code>pg_map</code>, <code>pg_extension_updater</code>, plus optional <code>pg_lake_spatial</code> (PostGIS-aware) and <code>pg_lake_benchmark</code>.</li>
+<li><strong>Postgres itself is the Iceberg catalog.</strong> This is the most interesting design decision in the whole thing. The Iceberg specification expects an external catalog (Hive Metastore, AWS Glue, the REST catalog, Polaris, Unity Catalog) — <code>pg_lake</code> makes Postgres play that role, storing snapshot pointers and manifest references in regular Postgres catalog tables. CREATE TABLE on an Iceberg table writes to PG’s catalog; the manifest in object storage gets updated; the whole thing happens inside a Postgres transaction.</li>
+<li><strong><code>pgduck_server</code></strong> is the bit that does the actual analytical heavy lifting. It is a separate, multi-threaded process that speaks the PostgreSQL wire protocol on a Unix socket (or port 5332) and underneath uses DuckDB as the columnar execution engine. When the Postgres planner recognizes that a query is hitting an Iceberg-backed foreign table — particularly one that benefits from columnar scan, predicate pushdown, and parallel S3 reads — it delegates that scan to <code>pgduck_server</code>, which fetches the relevant Parquet files and returns rows.</li>
+</ul>
+<p>What you get out of this:</p>
+<ul>
+<li><strong>Heap tables still behave like heap tables.</strong> OLTP traffic is unaffected. Your latency-sensitive <code>INSERT ... ON CONFLICT</code> is doing exactly what it did yesterday.</li>
+<li><strong>Iceberg tables behave like a foreign data wrapper.</strong> They are queryable from PG SQL with full JOINs against your heap tables. Predicate pushdown is real. Updates and deletes against Iceberg tables exist, but they go through Iceberg’s copy-on-write semantics — there is no MVCC on those rows in the PG sense.</li>
+<li><strong>Cross-tool interoperability is the headline feature.</strong> Because the data lives in standard Iceberg + Parquet on object storage, Spark, Trino, Athena, DuckDB-standalone, ClickHouse, and anything else that reads Iceberg can read the same data. PG is the catalog and a query engine, but it is not the storage of record for those tables.</li>
+</ul>
+<p>The transactional story is more nuanced than the marketing suggests. A transaction that touches both a heap table and an Iceberg table is <em>not</em> fully ACID across the boundary. The heap-side changes are MVCC-protected with full PostgreSQL semantics. The Iceberg-side changes are committed when the manifest pointer is updated, and the rules for visibility on the Iceberg side are Iceberg’s — snapshot isolation against the table-level snapshot, not row-level MVCC. For most analytical workloads this is fine. For workloads where you actually need the two sides to fail or commit together with strict guarantees, read the documentation carefully and test the failure modes before you build on it.</p>
+<p>The PG-compatibility footprint of <code>pg_lake</code> is essentially “all of Postgres, plus a foreign data wrapper that understands Iceberg.” If you can run extensions, you can run <code>pg_lake</code>. The Snowflake Postgres managed service runs the same code, with the additional commercial features around the catalog, governance, and the bundled <code>pgduck_server</code> deployment.</p>
+<h2>Lakebase: Postgres Without the Storage You Knew</h2>
+<p>The architecture, simplified:</p>
+<pre><code class="language-mermaid">flowchart LR
+    Client[&quot;psql / app&quot;] --&gt;|&quot;libpq&quot;| PG[&quot;PostgreSQL compute&lt;br/&gt;(Neon-patched binary)&quot;]
+    PG --&gt;|&quot;buffer reads&quot;| LFC[&quot;Local File Cache&lt;br/&gt;(on compute node)&quot;]
+    LFC --&gt;|&quot;page fault&quot;| PS[&quot;Pageserver&lt;br/&gt;(reconstructs page&lt;br/&gt;from WAL + base)&quot;]
+    PG --&gt;|&quot;WAL stream&quot;| SK[&quot;Safekeepers&lt;br/&gt;(Paxos quorum)&quot;]
+    SK --&gt;|&quot;persist WAL&quot;| Obj1[(&quot;Object storage&lt;br/&gt;(WAL archive)&quot;)]
+    PS --&gt;|&quot;layer files&quot;| Obj2[(&quot;Object storage&lt;br/&gt;(page deltas + base images)&quot;)]
+</code></pre>
+<p>The components, in plain terms:</p>
+<ul>
+<li>The <strong>compute node</strong> is a real PostgreSQL backend. It parses SQL, plans queries, executes them, manages MVCC, takes locks, owns its <code>shared_buffers</code>. It is patched relative to upstream — the changes are mostly around what happens at the storage manager (<code>smgr</code>) layer — but the SQL surface is identical. Extensions install. <code>pg_stat_statements</code> works. <code>pg_dump</code> works.</li>
+<li>The <strong>Local File Cache (LFC)</strong> is an additional cache that sits between <code>shared_buffers</code> and the pageserver. Conceptually: shared buffers are the hot working set, LFC is the warm working set, the pageserver is the source of truth. Tuning the LFC is where a lot of Lakebase’s perceived performance comes from.</li>
+<li>The <strong>safekeepers</strong> are a Paxos-style quorum. The compute node, instead of writing WAL to a local <code>pg_wal</code> directory and <code>fsync()</code>-ing it, sends WAL records over the network. A transaction is durable when a quorum of safekeepers has acknowledged the WAL record. Three safekeepers is typical; commit acknowledgment requires two of three.</li>
+<li>The <strong>pageserver</strong> is the most novel piece. It does not store pages directly. It stores layered WAL — base images plus deltas — and on a page request from the compute node, it materializes the requested page at the requested LSN and ships it back. Layer files spill out to object storage as cold tier. Hot pages stay on the pageserver’s local disk.</li>
+</ul>
+<p>What you get out of this:</p>
+<ul>
+<li><strong>Compute is stateless.</strong> The compute node has no durable local state of value. You can kill it, restart it, scale it to zero, scale it back from zero, or run it on a different host, and as long as it can talk to the safekeepers and the pageserver, it picks up where it left off. This is the architectural basis for “scale to zero” and for the sub-second branching that Neon is famous for.</li>
+<li><strong>Storage is bottomless.</strong> Object storage is the durable substrate; you do not provision a disk size. Pricing follows usage rather than allocation.</li>
+<li><strong>Branches are copy-on-write.</strong> Because pages are reconstructed from WAL on demand, creating a branch at LSN N is a metadata operation. The branch starts out reading the same layer files as its parent, and only diverges as new WAL is written.</li>
+<li><strong>Replication semantics are Neon-specific.</strong> There is no archive_command, no <code>pg_basebackup</code> from compute, no streaming replica in the traditional sense. The replication primitives are different. They exist, but they are not the ones in the PostgreSQL administration manual.</li>
+</ul>
+<p>What survives, and what doesn’t:</p>
+<ul>
+<li><strong>MVCC is unchanged.</strong> Visibility, snapshots, locking, deadlock detection, vacuum — all upstream Postgres behavior.</li>
+<li><strong>Extension compatibility is high but not total.</strong> Anything that does its work above the buffer manager works fine. Anything that pokes at the WAL stream, makes assumptions about local files, or relies on background workers writing to disk paths needs to be checked. Most production extensions you actually use — <code>pgvector</code>, <code>pg_stat_statements</code>, <code>pgaudit</code>, PostGIS, <code>pg_partman</code> — work without modification. A few specialized ones do not.</li>
+<li><strong>Vacuum still matters.</strong> This is the one most people get wrong. Even though the storage is bottomless and old layer files get garbage-collected on the pageserver, dead tuples in PG’s heap files still consume buffer space and affect query plans. <code>VACUUM</code> and autovacuum still need to run, and their tuning is still a real concern. The shape of the I/O it generates is different (reads come back from a network pageserver rather than a local SSD), but the workload it generates is the same.</li>
+<li><strong><code>fsync</code> semantics are the safekeeper round-trip.</strong> The latency floor for a commit is the network latency to the safekeeper quorum plus the safekeeper’s local fsync. In a single-AZ deployment this is fast. In a deliberately multi-AZ-quorum deployment it is not, and your <code>commit_delay</code> / batching strategy matters more than it does on local disk.</li>
+<li><strong><code>pg_wal</code> is gone.</strong> Or rather, it never wrote anything to disk locally. Tools that scrape the WAL directory, monitor archive lag the old way, or rely on <code>pg_basebackup</code> against the compute node need different plumbing.</li>
+</ul>
+<p>In Databricks Lakebase, this engine sits next to Unity Catalog and the Databricks lakehouse. The integration story is that operational data in Lakebase can be exposed to the lakehouse via Delta Sharing or Unity Catalog federation, but <strong>Lakebase storage itself is not Iceberg or Delta</strong>. The compute node reads from the Neon pageserver, not from object storage directly, and the on-disk format is internal. If you want to query Lakebase data with Spark or Trino directly, you do that through Unity Catalog federation, not by pointing those engines at the underlying object storage.</p>
+<h2>Where Each One Stops Being PostgreSQL</h2>
+<p>This is the question the marketing answers least helpfully.</p>
+<p><strong><code>pg_lake</code> stops being PostgreSQL at the foreign data wrapper boundary.</strong> Heap tables are real PG; Iceberg tables are not, and they have Iceberg’s semantics, not PG’s. Cross-table transactions across the heap/Iceberg boundary are best-effort, not strictly atomic. The DuckDB sidecar’s behavior is closer to “another Postgres-compatible database” than to “a faster execution path inside Postgres” — when planner choices cross between PG and <code>pgduck_server</code>, you are crossing a process boundary. None of this is fatal. All of it is real.</p>
+<p><strong>Lakebase stops being PostgreSQL at the storage manager.</strong> The SQL is identical, the MVCC model is identical, but everything below the buffer manager is different code. Operations playbooks written for upstream PostgreSQL — physical replication tuning, <code>pg_basebackup</code>-based DR, traditional <code>pg_wal</code>/archive_command/restore_command flows, low-level filesystem-level backups — do not apply. Replacements exist, but they are Neon’s, not Postgres’s. Extensions that rely on the storage manager’s exact behavior need verification.</p>
+<p>For the working DBA, the practical mental model is:</p>
+<ul>
+<li><strong>Choose <code>pg_lake</code></strong> when your bottleneck is “I need analytical access to data that lives in the lakehouse, with full PostgreSQL on top.” You keep all of operational PostgreSQL, including every operational tool you already own, and you get a clean path into Iceberg.</li>
+<li><strong>Choose Lakebase</strong> when your bottleneck is “I want a managed serverless OLTP Postgres that scales to zero, branches in milliseconds, and integrates with Unity Catalog.” You keep the SQL surface but you give up direct ownership of the storage stack, and you accept that the operational toolkit is not the one you have always used.</li>
+</ul>
+<p>These are different bets. Calling both of them “PostgreSQL + lakehouse” is true at a high enough level of abstraction to be misleading at every lower level. Build mental models for them separately. If you are doing an architecture review where one or both is on the table, the worst thing you can do is treat them as interchangeable just because they share the word “Postgres” in the marketing.</p>
+</body>
+</html>

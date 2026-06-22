@@ -1,5 +1,3 @@
----
----
 
 ![Image](https://pbs.twimg.com/media/HF-p1RUbEAIH-6t?format=jpg&name=large)
 

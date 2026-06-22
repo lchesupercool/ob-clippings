@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5. Concurrency Control  Hironobu SUZUKI @ InterDB</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>title: "5. Concurrency Control :: Hironobu SUZUKI @ InterDB"
+source: "https://www.interdb.jp/pg/pgsql05/index.html"
+author:
+published:
+created: 2026-04-13
+description:
+tags:
+  - "clippings"</p>
+<hr />
+<h1>5. Concurrency Control</h1>
+<p>Concurrency Control is a mechanism that maintains ==atomicity and isolation==, which are two properties of the ACID, when multiple transactions run concurrently in a database.</p>
+<p>There are ==three broad concurrency control techniques==: <em>Multi-version Concurrency Control</em> (MVCC), <em>Strict Two-Phase Locking</em> (S2PL), and <em>Optimistic Concurrency Control</em> (OCC). Each technique has many variations.</p>
+<p>In MVCC, each ==write operation== creates a new version of a data item while retaining the old version. When a transaction ==reads== a data item, the system selects one of the versions to ensure ==isolation of the individual transaction==. The main advantage of MVCC is that ‘ <em>readers don’t block writers, and writers don’t block readers</em> ’, ==in contrast==, for example, an S2PL-based system must block readers when a writer writes an item because the writer acquires an exclusive lock for the item. PostgreSQL and some RDBMSs use ==a variation of MVCC called <strong>Snapshot Isolation (SI)</strong>.==</p>
+<p>To implement SI, some RDBMSs, such as Oracle, use rollback segments. ==When writing a new data item, the old version of the item is written to the rollback segment, and subsequently the new item is overwritten to the data area.== PostgreSQL uses a simpler method. A new data item is inserted directly into the relevant table page. When reading items, PostgreSQL selects the appropriate version of an item in response to an individual transaction by applying <strong>visibility check rules</strong>.</p>
+<p>SI does not allow the three anomalies defined in the ANSI SQL-92 standard: ==<em>Dirty Reads</em>, <em>Non-Repeatable Reads</em>, and <em>Phantom Reads</em>.== However, SI cannot achieve true serializability because it allows serialization anomalies, such as <em>Write Skew</em> and <em>Read-only Transaction Skew</em>. Note that the ANSI SQL-92 standard based on the classical serializability definition is <strong>not</strong> equivalent to the definition in modern theory.</p>
+<p>To deal with this issue, <strong>Serializable Snapshot Isolation (SSI)</strong> has been added as of version 9.1. SSI can detect the serialization anomalies and can resolve the conflicts caused by such anomalies. Thus, PostgreSQL versions 9.1 or later provide a true SERIALIZABLE isolation level. (In addition, SQL Server also uses SSI; Oracle still uses only SI.)</p>
+<p>Transaction Isolation Level in PostgreSQL</p>
+<p>PostgreSQL-implemented transaction isolation levels are described in the following table:</p>
+<table>
+<thead>
+<tr>
+<th>Isolation Level</th>
+<th>Dirty Reads</th>
+<th>Non-repeatable Read</th>
+<th>Phantom Read</th>
+<th>Serialization Anomaly</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>READ COMMITTED</td>
+<td>Not possible</td>
+<td>Possible</td>
+<td>Possible</td>
+<td>Possible</td>
+</tr>
+<tr>
+<td>REPEATABLE READ <sup>*1</sup></td>
+<td>Not possible</td>
+<td>Not possible</td>
+<td>Not possible in PG; See <code>Section 5.7.3.</code>    (Possible in ANSI SQL)</td>
+<td>Possible</td>
+</tr>
+<tr>
+<td>SERIALIZABLE</td>
+<td>Not possible</td>
+<td>Not possible</td>
+<td>Not possible</td>
+<td>Not possible</td>
+</tr>
+</tbody>
+</table>
+<p>*1: In versions 9.0 and earlier, this level had been used as ‘SERIALIZABLE’ because it does not allow the three anomalies defined in the ANSI SQL-92 standard. However, with the implementation of SSI in version 9.1, this level has changed to ‘REPEATABLE READ’ and a true SERIALIZABLE level was introduced.</p>
+<p>Note</p>
+<p>PostgreSQL uses SSI for DML (Data Manipulation Language, e.g, SELECT, UPDATE, INSERT, DELETE), and 2PL for DDL (Data Definition Language, e.g., CREATE TABLE, etc).</p>
+<p>[[LLM Wiki/raw/clippings/中译-5. Concurrency Control  Hironobu SUZUKI @ InterDB.md|中译]]</p>
+</body>
+</html>

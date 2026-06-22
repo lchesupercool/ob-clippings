@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026-04-25 The Code Agent Orchestra - what makes multi-agent coding work</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>title: "The Code Agent Orchestra - what makes multi-agent coding work"
+source: https://addyosmani.com/blog/code-agent-orchestra/
+author: Addy Osmani
+published: March 26, 2026
+clipped: 2026-04-25
+tags:
+  - clipping
+  - ai-coding
+  - multi-agent</p>
+<hr />
+<h1>The Code Agent Orchestra - what makes multi-agent coding work</h1>
+<h2>March 26, 2026</h2>
+<p>I spoke about orchestrating coding agents at <a href="https://www.oreilly.com/AI-Codecon/">O'Reilly AI CodeCon</a> today. The talk covered the landscape of patterns for coordinating AI coding agents in real-world software workflows - from spawning your first subagent to running parallel agent teams with quality gates that keep everything trustworthy. This is a write-up of the material I presented for anyone looking to put these patterns into practice.</p>
+<p>If you want to follow along with the interactive deck or grab all the resources, they're here:</p>
+<ul>
+<li><a href="https://talks.addy.ie/oreilly-codecon-march-2026/">Full interactive slide deck</a></li>
+<li><a href="https://talks.addy.ie/oreilly-codecon-march-2026/overview/">Overview and resources page</a>
+<img alt="" src="../../assets/code-agent-orchestra/code-agent-orchestra-01.jpg" /></li>
+</ul>
+<h2>The moment we're in</h2>
+<p><strong>You used to pair with one AI. Now you manage an agent team.</strong></p>
+<p>Six months ago, most developers worked with a single AI assistant in a tight synchronous loop. You typed a prompt, waited, reviewed the output, gave feedback, repeated. Your ceiling was whatever fit in that single context window. The conversation thread was your workspace.</p>
+<p>That model has been replaced. Today, the most productive developers are coordinating multiple agents running asynchronously - each with its own context window, its own file scope, its own area of responsibility - while the developer orchestrates from above. The codebase becomes your canvas, not a conversation thread. This is the shift from being a conductor (one musician, real-time guidance) to being an orchestrator (an entire ensemble, asynchronous coordination). I wrote about the early signs of this shift in <a href="https://addyosmani.com/blog/future-agentic-coding/">The Future of Agentic Coding</a>.</p>
+<p>This talk covered how to make that transition practically: the patterns, the tools, the quality gates, and the discipline required to do it well.</p>
+<h2>The 8 levels of AI-assisted coding</h2>
+<p><strong>Most developers are stuck at Level 3-4. The orchestration tier starts at Level 6, and it requires a fundamentally different set of skills than what got you to Level 5.</strong></p>
+<p>Steve Yegge recently outlined eight levels of how developers evolve with AI tools, and it's a useful framework for understanding where you're and where you're heading.</p>
+<p><img alt="" src="../../assets/code-agent-orchestra/code-agent-orchestra-02.jpg" /></p>
+<p>This talk covered levels 5 through 8. Where are you on this ladder?</p>
+<h2>The shift: conductor to orchestrator</h2>
+<p><strong>The conductor model gives you one agent, synchronous, with your context window as a hard ceiling. The orchestrator model gives you multiple agents with their own context windows, working asynchronously while you plan and check in.</strong></p>
+<p>The core mental model shift is the difference between pair programming and managing a team. In the conductor model, you guide a single AI agent in real time. It's synchronous, sequential, and your context window is a hard ceiling. Tools for this model include Claude Code CLI and Cursor in-editor agent mode.</p>
+<p>In the orchestrator model, you're coordinating an entire ensemble. Multiple agents, each with their own context window, working asynchronously. You plan the work, assign it, and check in periodically. Tools for this model include Agent Teams, Conductor, Codex, and Copilot Coding Agent.</p>
+<p>Just like <a href="https://addyosmani.com/blog/coding-agents-manager/">managing a real team</a>, you need different skills now: <a href="https://addyosmani.com/blog/good-spec/">clear specs</a>, work decomposition, and output verification rather than writing code yourself.</p>
+<h2>The single-agent ceiling</h2>
+<p><strong>Every developer eventually hits three walls with a single agent: context overload, no specialization, and no coordination. Subagents solve the first two. Agent Teams solve all three.</strong></p>
+<p>Why can one agent not do it all? Three constraints.</p>
+<p><strong>Context overload.</strong> One agent can only hold so much information. Large codebases overwhelm a single context window. You lose important details as the conversation grows longer.</p>
+<p><strong>No specialization.</strong> One agent doing everything - data layer, API, UI, tests - is a jack of all trades and master of none. A focused agent that only handles the data layer writes significantly better database code than a generalist juggling your entire codebase.</p>
+<p><strong>No coordination.</strong> Even if you spawn helpers, they can't communicate, share a task list, or resolve dependencies. The more agents you add without coordination primitives, the harder it gets.</p>
+<h2>Why multi-agent?</h2>
+<p><strong>Parallelism, specialization, isolation, and compound learning don't just add up - they multiply. Three focused agents consistently outperform one generalist agent working three times as long.</strong></p>
+<p>Four compounding reasons to go multi-agent:</p>
+<ul>
+<li><strong>Parallelism (3x throughput)</strong> - Three agents building frontend, backend, and tests simultaneously.</li>
+<li><strong>Specialization (focused context)</strong> - Each agent only sees the files it owns. An agent that only knows about <code>db.js</code> writes better database code than one juggling your entire codebase.</li>
+<li><strong>Isolation (safe execution)</strong> - Git worktrees give each agent its own working directory. No merge conflicts while they work.</li>
+<li><strong>Compound learning</strong> - An <a href="https://addyosmani.com/blog/agents-md/"><code>AGENTS.md</code></a> file accumulates patterns and gotchas across sessions, so every session makes the next one better.</li>
+</ul>
+<h2>Pattern 1: Subagents - focused delegation</h2>
+<p><strong>Subagents are the simplest multi-agent pattern and the one you should try first.</strong></p>
+<p>Subagents use the Task tool to spawn specialized child agents from a parent orchestrator. The parent decomposes a task into pieces, spawns subagents for each piece, and manages the dependency graph manually.</p>
+<p>Here is a concrete example. You give Claude Code a prompt: "Build a bookmarks manager called Link Shelf using Express and SQLite." The parent orchestrator decomposes this into three subagent briefs:</p>
+<ul>
+<li><strong>Data Layer subagent</strong> - builds <code>db.js</code> with schema and CRUD operations, writes <code>DATA.md</code> report when done</li>
+<li><strong>Business Logic subagent</strong> - builds <code>validation.js</code> with input rules, writes <code>LOGIC.md</code> report when done</li>
+<li><strong>API Routes subagent</strong> - reads both <code>DATA.md</code> and <code>LOGIC.md</code>, builds <code>server.js</code> with Express routes
+The first two subagents are independent - they run in parallel. The third depends on both, so it waits for their report files before starting. The parent manages this dependency graph manually.</li>
+</ul>
+<h3>Demo 1: Subagents build Link Shelf</h3>
+<p>Watch the parent decompose the prompt, spawn Data and Validation subagents in parallel, then launch API Routes once both reports are ready. Tests pass at the end.</p>
+<p><strong>What subagents solve:</strong> context isolation per agent, specialization, parallel execution for independent tasks, and it's cost-neutral at roughly 220k tokens total.</p>
+<p><strong>What is still missing:</strong> the parent must manually manage the dependency graph. There's no peer messaging between agents. There's no shared task list. And if you're sloppy about file scoping, two agents could write to the same file.</p>
+<p>Bottom line: subagents give you parallel execution with manual coordination. That is great for simple decomposition. But when coordination becomes the bottleneck, you need Agent Teams.</p>
+<h2>Pro-tip: Hierarchical subagents - teams of teams</h2>
+<p><strong>Don't stop at one level of delegation. Spawn feature leads that spawn their own specialists. This gives you 3x deeper decomposition without exploding anyone's context window.</strong></p>
+<p>Instead of your orchestrator spawning six subagents - which fragments its context - spawn two feature leads. Each feature lead then spawns its own two or three specialists.</p>
+<p>The parent orchestrator only talks to two agents, keeping its context clean. Feature Lead A gets a brief like "Build the search feature" and decomposes it into Data, Logic, and API subagents on its own. The parent never sees those details.</p>
+<p>This mimics how real engineering organizations work. You don't have the VP of Engineering assigning tasks to individual engineers. You go through layers of tech leads.</p>
+<h2>Pattern 2: Agent Teams - true parallel execution</h2>
+<p><strong>Agent Teams add the coordination primitives that subagents lack: a shared task list with dependency tracking, peer-to-peer messaging between teammates, and file locking to prevent conflicts.</strong></p>
+<p>Agent Teams are Claude Code's experimental feature for true parallel execution. Enable it with:</p>
+<pre><code>export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+</code></pre>
+<p>The architecture has three layers:</p>
+<ul>
+<li><strong>Team Lead</strong> at the top - decomposes work, creates the task list, synthesizes results</li>
+<li><strong>Shared Task List</strong> in the middle - tasks with statuses (pending, in_progress, completed, blocked), dependency tracking, and file locking</li>
+<li><strong>Teammates</strong> at the bottom - each an independent Claude Code instance with its own context window, running in tmux split panes
+Teammates self-claim tasks from the shared list. They message each other directly - peer-to-peer, not through the lead. When a teammate finishes and marks a task complete, any blocked tasks that depended on it automatically unblock. Press <code>Ctrl+T</code> at any time to toggle a visual overlay of the task list.</li>
+</ul>
+<h3>Demo 2: Agent Teams build search in parallel</h3>
+<p>This is the hero demo. We start with a working Link Shelf app and give Claude Code one prompt: "Create a three-person agent team to add search functionality." The lead spawns Backend, Frontend, and Test teammates. The backend teammate starts the search API endpoint. The frontend teammate starts the search UI. The test teammate is initially blocked - waiting for the API. When backend finishes and messages the API contract to frontend, the test task auto-unblocks. All three work simultaneously.</p>
+<h3>Demo 3: Agent team communication up close</h3>
+<p>This shorter demo zooms in on the communication mechanisms. Watch the <code>Ctrl+T</code> task list overlay, the dependency auto-unblock when backend marks the API endpoint as completed, and the peer messages where the backend agent sends the frontend agent the API contract directly without going through the lead.</p>
+<h2>Agent Teams: how the mechanics work</h2>
+<p><strong>Two mechanisms make Agent Teams work: a shared task list with automatic dependency resolution, and peer-to-peer messaging that prevents the lead from becoming a bottleneck.</strong></p>
+<p>The <strong>shared task list</strong> gives each task a status: pending, in_progress, completed, or blocked. Blocked tasks have explicit dependencies. When the backend teammate marks the search API as completed, the blocked test-writing task automatically flips to pending and a teammate picks it up. File locking prevents two teammates from editing the same file simultaneously.</p>
+<p><strong>Peer messaging</strong> is the other critical piece. The backend agent tells the frontend agent the API contract directly: "GET /search?q= returns [{id,title,url}]." This doesn't go through the lead. When a teammate goes idle, the lead is automatically notified. This peer-to-peer approach prevents the lead from becoming a coordination bottleneck.</p>
+<h2>Agent Teams: key takeaways</h2>
+<p><strong>Three to five teammates is the sweet spot. Token costs scale linearly, and three focused teammates consistently outperform five scattered ones.</strong></p>
+<ul>
+<li><strong>True parallelism with coordination</strong> - Not just running things at the same time. The shared task list with dependency tracking ensures work happens in the right order.</li>
+<li><strong>Peer messaging prevents bottlenecks</strong> - Teammates communicate directly. Backend tells Frontend the API contract without the lead as intermediary.</li>
+<li><strong>Plan approval for risky tasks</strong> - Require teammates to write a plan before implementing. The lead reviews and approves or rejects, catching architectural problems before code exists.</li>
+<li><strong>Right-size your team</strong> - 3-5 teammates is the sweet spot. Token costs scale linearly with team size.</li>
+</ul>
+<h2>Pro-tips for Agent Teams: reliability</h2>
+<p><strong>Loop guardrails with forced reflection substantially cut stuck agents. A dedicated @reviewer teammate that auto-triggers on every task completion means the lead only ever sees green-reviewed code.</strong></p>
+<p><strong>Loop Guardrails + Reflection Step.</strong> Every teammate gets a hard <code>MAX_ITERATIONS=8</code>. Before each retry, force a reflection prompt:</p>
+<p>"What failed? What specific change would fix it? Am I repeating the same approach?"</p>
+<p>This single change substantially cuts stuck agents. Without it, agents loop endlessly trying the same broken approach. With it, they self-correct.</p>
+<p><strong>Dedicated @reviewer Teammate.</strong> Spawn a permanent reviewer with these constraints:</p>
+<ul>
+<li><strong>Model:</strong> Claude Opus 4.6 (read-only)</li>
+<li><strong>Tools:</strong> lint, test, security-scan only</li>
+<li><strong>Trigger:</strong> auto on every TaskCompleted event</li>
+<li><strong>Ratio:</strong> 1 reviewer per 3-4 builders
+The lead only sees green-reviewed code. It's like having a permanent CI quality gate built into the team itself.</li>
+</ul>
+<h2>Pattern 3: Orchestration at scale</h2>
+<p><strong>When you need to manage 5, 10, or 20+ agents across multiple repos and features, you need purpose-built orchestration tools. Every tool in 2026 fits one of three tiers - pick the right tier for the job.</strong></p>
+<p>The 2026 tool landscape breaks into three tiers:</p>
+<h3>Tier 1: In-process subagents and teams</h3>
+<p>Claude Code subagents and Agent Teams. Single terminal session, no extra tooling needed. Start here.</p>
+<h3>Tier 2: Local orchestrators</h3>
+<p>Your machine spawns multiple agents in isolated worktrees. You stay in the loop with dashboards, diff review, and merge control. Best for 3-10 agents on known codebases. Tools include Conductor, Vibe Kanban, Gastown, OpenClaw + Antfarm, Claude Squad, Antigravity, and Cursor Background Agents.</p>
+<h3>Tier 3: Cloud async agents</h3>
+<p>Assign a task, close your laptop, return to a pull request. Agents run in cloud VMs. No terminal, no local setup. Tools include Claude Code Web, GitHub Copilot Coding Agent, Jules by Google, and Codex Web by OpenAI.</p>
+<p>Most developers in 2026 will use all three tiers - Tier 1 for interactive work, Tier 2 for parallel sprints, Tier 3 to drain the backlog overnight.</p>
+<h2>Tool spotlights</h2>
+<h3>Conductor by Melty Labs</h3>
+<p><img alt="Conductor dashboard showing multiple Claude Code agents running in parallel with diff review" src="../../assets/code-agent-orchestra/code-agent-orchestra-03.webp" /></p>
+<p>Conductor is the fastest way to start multi-agent orchestration on Mac. It runs multiple Claude Code and Codex agents in parallel, each in its own git worktree, with a visual dashboard and diff-first review UI. It's free - you pay only your API costs. macOS only for now (Apple Silicon and Intel). The sweet spot is 3-8 parallel features on the same repo with visual oversight.</p>
+<h3>Claude Code web</h3>
+<p><img alt="Claude Code Web interface showing parallel cloud tasks with GitHub integration" src="../../assets/code-agent-orchestra/code-agent-orchestra-04.png" /></p>
+<p>Claude Code on the web at <code>claude.ai/code</code> is the Tier 3 version of Claude Code - completely browser-based, no terminal required. Connect your GitHub repos, describe tasks, and they run in Anthropic-managed cloud VMs. You can steer mid-run, get automatic PR creation, and access it from the iOS app. The key mental model: Teams (terminal) is for working alongside agents; Web (browser) is for delegating and walking away.</p>
+<h3>GitHub Copilot coding agent</h3>
+<p><img alt="GitHub Copilot Coding Agent showing the Agents panel and PR workflow" src="../../assets/code-agent-orchestra/code-agent-orchestra-05.png" /></p>
+<p>An important distinction: Copilot agent mode in the IDE is synchronous and interactive. The Copilot Coding Agent on GitHub is fully async. Assign any GitHub issue to <code>@copilot</code> or use the Agents panel, and it creates a draft PR working in a GitHub Actions environment. It now runs a self-review loop before tagging you. Third-party agents including Claude Code and Codex are also accessible through the same Agents panel, and you can trigger it from Slack, Jira, Linear, and Azure Boards.</p>
+<h3>Jules by Google</h3>
+<p><img alt="Jules cloud coding agent showing plan approval workflow and PR creation" src="../../assets/code-agent-orchestra/code-agent-orchestra-06.webp" /></p>
+<p>Jules is Google's async cloud coding agent, powered by Gemini. The workflow: connect a GitHub repo, describe a task, Jules generates a plan you approve before any code is written, then runs in a cloud VM and returns a PR with full reasoning and terminal logs. Distinctive features include audio changelogs, mid-task interruption, and the Jules Tools CLI for piping GitHub issues directly. It auto-reads your repo's <code>AGENTS.md</code> with zero extra configuration.</p>
+<h3>OpenAI Codex web</h3>
+<p><img alt="OpenAI Codex Web interface showing parallel cloud tasks with verifiable evidence" src="../../assets/code-agent-orchestra/code-agent-orchestra-07.webp" /></p>
+<p>Codex Web is one of the most widely used tools in this space. Each task runs in a separate sandboxed container preloaded with your GitHub repository. The surface ecosystem spans Web, CLI (open-source), macOS App, IDE extensions, and GitHub integration - all connected by your ChatGPT account. The verifiable evidence feature returns citations of terminal logs and test outputs for every task, so you can audit exactly what happened.</p>
+<h3>Cursor Cloud Agents + Glass</h3>
+<p><img alt="Cursor Glass interface showing agent management as the primary surface" src="../../assets/code-agent-orchestra/code-agent-orchestra-08.jpg" /></p>
+<p>Same agent fundamentals but running in isolated cloud VMs. Kick off agents from the web, desktop app, Slack, Linear, GitHub, API, or even install cursor.com/agents as a PWA on your phone. Glass is Cursor's new interface that makes agent management the primary surface and the traditional editor something you reach for when needed. This mirrors a broader pattern across the entire ecosystem: the control plane is becoming the primary experience, and the editor is one instrument underneath it.</p>
+<h3>Vibe Kanban</h3>
+<p><img alt="Vibe Kanban board showing parallel agent tasks with diff review" src="../../assets/code-agent-orchestra/code-agent-orchestra-09.avif" /></p>
+<p>Vibe Kanban solves the "doomscrolling gap" - those 2-5 minutes when an agent is working and you have nothing to do. Create task cards with detailed prompts, drag to "In Progress," each gets its own worktree and branch. Review diffs in-board, send feedback to running agents. Supports Claude Code, Codex, Gemini CLI, Amp, Cursor Agent CLI, and more. Cross-platform (Mac, Windows, Linux), free, BYOK.</p>
+<h2>Pro-tips for scaling</h2>
+<p><strong>Multi-model routing cuts costs without sacrificing quality. A human-curated AGENTS.md is worth more than a machine-generated one at any length - research shows AI-written rules offer no benefit and can marginally reduce success rates.</strong></p>
+<h3>Multi-model routing</h3>
+<p>Not every task needs your most expensive model. Route planning and architecture tasks to one of the cheaper Gemini/Claude/OpenAI models. Route implementation to Sonnet, Opus or Codex. Route review to a dedicated security model. Create a <code>MODEL_ROUTING.md</code> file:</p>
+<pre><code>Planning       -&gt; Gemini 
+Implementation -&gt; Claude Opus or Sonnet 
+Review         -&gt; etc.
+Tests          -&gt; etc.
+</code></pre>
+<h3>Worktree lifecycle scripts</h3>
+<p>Three shell aliases automate the grunt work:</p>
+<pre><code>agent-spin &lt;feature&gt;   # create worktree + branch + start agent
+agent-merge &lt;feature&gt;  # rebase + review + open PR
+agent-clean            # remove finished worktrees
+</code></pre>
+<p>It's about 12 lines of bash. Conductor does this visually for you.</p>
+<h3>Human-curated AGENTS.md only</h3>
+<p>This is the big one. <a href="https://addyosmani.com/blog/agents-md/">Research has shown</a> (Gloaguen et al., ETH Zurich) that LLM-generated AGENTS.md files offer no benefit and can marginally reduce success rates (~3% on average) while increasing inference costs by over 20%. Developer-written context files, by contrast, provide a modest ~4% improvement. Never let an agent write to <code>AGENTS.md</code> directly. The lead must approve every line. Keep it shorter with clear sections:</p>
+<pre><code>## STYLE
+- Use functional components with hooks
+- Prefer named exports
+
+## GOTCHAS
+- SQLite requires WAL mode for concurrent reads
+- Express middleware order matters for auth
+
+## ARCH_DECISIONS
+- All state in SQLite, no in-memory caches
+- One Express router per feature module
+
+## TEST_STRATEGY
+- Integration tests over unit tests for API routes
+- Use supertest for HTTP assertions
+</code></pre>
+<h2>Quality gates: trust but verify</h2>
+<p><strong>Three quality gates make agent output trustworthy: plan approval catches bad architecture before code exists, hooks enforce automated checks on every lifecycle event, and AGENTS.md compounds learning across sessions.</strong></p>
+<p><strong>Plan approval.</strong> Require teammates to write a plan before they start coding. The lead reviews the approach and approves or rejects. It's far cheaper to fix a bad plan than to fix bad code. The flow looks like:</p>
+<pre><code>teammate &gt;&gt;&gt; writes plan &gt;&gt;&gt; lead review &gt;&gt;&gt; approve/reject &gt;&gt;&gt; implement
+</code></pre>
+<p><strong>Hooks.</strong> Automated checks on lifecycle events. A <code>TeammateIdle</code> hook verifies all tests pass before allowing an agent to stop working. A <code>TaskCompleted</code> hook runs lint and tests before marking a task as done. If the hook fails, the agent keeps working until it passes:</p>
+<pre><code>task done &gt;&gt;&gt; hook runs npm test &gt;&gt;&gt; pass? allow  |  fail? keep working
+</code></pre>
+<p><strong>AGENTS.md for compound learning.</strong> This file captures discovered patterns, gotchas, and style preferences. Every agent reads it at the start of a session, and every session adds to it. Session one learns about a testing pattern, AGENTS.md is updated, session two avoids the same mistake.</p>
+<h2>The bottleneck has shifted</h2>
+<p><strong>The bottleneck is no longer generation. It's <a href="https://addyosmani.com/blog/code-review-ai/">verification</a>. Agents can produce impressive output at incredible speed. Knowing with confidence whether that output is correct is the hard part.</strong></p>
+<p>Tests that pass before a change don't guarantee they will catch regressions from the change. Agents can write tests that are technically valid but miss the cases that matter. Context window limitations mean agents working on large codebases may miss important constraints outside their current view. And flaky environments, which a single developer encounters as an annoying edge case, become systemic blockers when forty agents hit the same flaky test simultaneously.</p>
+<p>Until <a href="https://addyosmani.com/blog/code-review-ai/">verification infrastructure</a> catches up with generation capabilities, human review isn't optional overhead. It's the safety system. The appropriate response to impressive agent output isn't to trust it because it looks good. It's to have the architectural understanding and testing discipline to evaluate it rigorously.</p>
+<h2>Demo 4: Quality gates and self-improving agents</h2>
+<p>This demo ties everything together. Watch three things. First, the plan approval flow - a teammate proposes adding a favorites feature, the lead spots the plan is missing a database migration step and rejects it, and the teammate revises. Second, the hooks firing on task completion - the <code>TaskCompleted</code> hook catches a forgotten <code>console.log</code> statement, and the agent fixes it before the task is marked done. Third, <code>AGENTS.md</code> getting updated at the end with a new entry: "Always include ALTER TABLE migration when adding columns to existing tables." That learning carries forward to every future session.</p>
+<h2>The Ralph Loop and self-improving agents</h2>
+<p><strong>The Ralph Loop pattern breaks development into small atomic tasks and runs an agent in a stateless-but-iterative loop. Each iteration: pick task, implement, validate, commit if pass, reset context and repeat. This avoids context overflow while maintaining continuity through external memory.</strong></p>
+<p>Popularized by Geoffrey Huntley and Ryan Carson, the Ralph Loop is the pattern behind "shipping while you sleep." Carson's standalone <code>ralph</code> tool (snarktank/ralph) implements the core loop, while his Antfarm project layers multi-agent orchestration on top of OpenClaw using the same pattern. The core idea generalizes across tools.</p>
+<p>The five-step cycle:</p>
+<ul>
+<li><strong>Pick</strong> - select the next task from <code>tasks.json</code></li>
+<li><strong>Implement</strong> - make the change</li>
+<li><strong>Validate</strong> - run tests, types, lint</li>
+<li><strong>Commit</strong> - if checks pass, commit and update task status</li>
+<li><strong>Reset</strong> - clear the agent context and start fresh with the next task
+The key insight is stateless-but-iterative. By resetting each iteration, the agent avoids accumulating confusion. Small bounded tasks produce cleaner code with fewer hallucinations than one enormous prompt.</li>
+</ul>
+<p>Safeguards that make it reliable: feed errors back for auto-retry, but kill and reassign after 3+ stuck iterations. Always work on feature branches. Set hard limits on iterations, time, and tokens. The agent opens a PR - you review before merge.</p>
+<p>Four channels of memory persist across resets: git commit history, a progress log, the task state file (<code>tasks.json</code>), and <code>AGENTS.md</code> as long-term semantic memory. Start with one loop overnight. Graduate to ten loops on ten branches.</p>
+<h3>Making agents smarter over time</h3>
+<p><strong>Self-Reflection with REFLECTION.md proposals.</strong> After every task, force the agent to write a REFLECTION.md: what surprised me, one pattern to add to AGENTS.md, one prompt improvement. The lead reviews and merges approved learnings. This is how <a href="https://addyosmani.com/blog/self-improving-agents/">compound learning actually compounds</a> - systematically, not ad hoc.</p>
+<p><strong>Token Budgeting and Kill Criteria.</strong> Set hard per-agent budgets: Frontend 180k tokens, Backend 280k tokens. At 85% of budget, auto-pause and notify the lead. If stuck 3+ iterations on the same error, kill and reassign to a fresh agent.</p>
+<p><strong>Beads / Persistent Memory.</strong> Gastown's "beads" pattern: immutable, git-backed records of every decision and outcome with full provenance. Agents query past beads through task graphs and a SQL-addressable data plane - not traditional vector-based RAG, but structured, queryable institutional memory that goes far beyond a flat markdown file.</p>
+<h2>The discipline: what makes this work</h2>
+<p><strong>The human bottleneck was a feature, not a bug. At human pace, errors compound slowly and pain forces early correction. With an army of agents, small mistakes compound at a rate that outruns your ability to catch them.</strong></p>
+<p>When humans write code slowly, you feel the pain early. A test fails, a code review catches something, you notice duplication. Pain is immediate, so you fix as you go.</p>
+<p>With an orchestrated army of agents, there's no natural bottleneck. Small harmless mistakes - a code smell here, a duplication there, an unnecessary abstraction - compound at a rate that's unsustainable. You have removed yourself from the loop, so you don't feel the pain until it's too late. Then one day you try to add a feature, and the architecture doesn't allow it. Your tests are equally untrustworthy because agents wrote those too.</p>
+<p>This is why every quality gate matters. Plan approval, hooks, token budgets, human review - they exist not because they're nice to have, but because without them you will agentically code yourself into a corner.</p>
+<h3>Delegate the tasks, not the judgment</h3>
+<p><strong>Let agents handle scoped tasks with clear pass/fail criteria, boilerplate, migrations, and test scaffolding. Keep for yourself: architecture, deciding what NOT to build, reviewing with full context, and the taste that produces good systems.</strong></p>
+<p>Agents excel at anything with a tight evaluation function - where the agent can measure its own work. They are genuinely great at boilerplate, migrations, test scaffolding, and exploring approaches you would never have time to try by hand.</p>
+<p>Keep for yourself: architecture and API design (agents have seen tons of bad architecture in their training data and will happily cargo-cult enterprise patterns into your startup), deciding what NOT to build (saying no is a feature agents don't have), and reviewing agent output with full system context (agents only ever have a local view).</p>
+<p>Build fewer features, but the right ones. The speed of code generation is a siren song. Slow down enough to maintain understanding. Because if you <a href="https://addyosmani.com/blog/comprehension-debt/">lose understanding of your own system</a>, you have lost the ability to fix it, extend it, or even know when it's broken.</p>
+<h3>Your spec is the leverage</h3>
+<p><strong>When you orchestrate fifty agents in parallel, vague thinking doesn't just slow you down - it multiplies. Ambiguous requirements propagate through dozens of parallel runs, each going slightly wrong in a slightly different direction. Strong engineers get MORE leverage from agents, not less.</strong></p>
+<p>The difference between mediocre output and exceptional output comes down almost entirely to the quality of your specification. A vague spec multiplies errors across the entire fleet. A precise spec - with clear architecture, integration boundaries, edge cases, and invariants - multiplies into precise implementations everywhere.</p>
+<p>The <a href="https://addyosmani.com/blog/good-spec/">spec</a> isn't a prompt anymore. The spec is product thinking made explicit. This is why strong software engineers get <a href="https://addyosmani.com/blog/agentic-engineering/">more leverage from these tools</a> than weak ones. The mechanical work of typing code is being automated. The cognitive work of understanding systems is being amplified across an entire fleet of autonomous workers.</p>
+<h2>The factory model</h2>
+<p><strong>You're no longer just writing code. You're building the factory that builds your software. That factory has a production line: Plan, Spawn, Monitor, Verify, Integrate, Retro.</strong></p>
+<p>A factory has quality control. A factory has process documentation. A factory has inputs that need to be precisely specified or the outputs come out wrong. A factory stalls when the environment is unreliable. All of these properties map directly onto agentic software development.</p>
+<p>The six-step production line:</p>
+<ul>
+<li><strong>Plan</strong> - Write specs with acceptance criteria. Your spec is the leverage.</li>
+<li><strong>Spawn</strong> - Create your team and assign agents.</li>
+<li><strong>Monitor</strong> - Watch progress and resolve blockers every 5-10 minutes. Don't hover.</li>
+<li><strong>Verify</strong> - Run tests, review code. Verification is the bottleneck, not generation.</li>
+<li><strong>Integrate</strong> - Merge branches, resolve conflicts.</li>
+<li>
+<p><strong>Retro</strong> - Update AGENTS.md with new patterns. Compound learning.
+Practical tips for running the factory:</p>
+</li>
+<li>
+<p><strong>Set WIP limits:</strong> Don't run more agents than you can meaningfully review. 3-5 is the sweet spot.</p>
+</li>
+<li><strong>Define kill criteria:</strong> If an agent is stuck for 3+ iterations on the same error, stop and reassign.</li>
+<li><strong>Async check-ins:</strong> Check progress every 5-10 minutes. Let agents work autonomously.</li>
+<li><strong>One file, one owner:</strong> Never let two agents edit the same file. Conflicts kill velocity.
+For more on this framework, see <a href="https://addyosmani.com/blog/factory-model/">The Factory Model</a>.</li>
+</ul>
+<h2>5 patterns to start today</h2>
+<p>If you take away five things from this talk:</p>
+<ul>
+<li><strong>Subagents for decomposition.</strong> Use the Task tool to spawn focused child agents with specific briefs and file ownership. Zero setup. Start here today.</li>
+<li><strong>Agent Teams for parallelism.</strong> Enable <code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1</code>. Create a lead + 3 teammates. Use the shared task list for coordination.</li>
+<li><strong>Git worktrees for isolation.</strong> Each agent gets its own worktree. No merge conflicts, clean integration. Tools like Conductor handle this automatically.</li>
+<li><strong>Quality gates for trust.</strong> Require plan approval for risky changes. Add hooks that run tests on task completion. Never trust agent output without verification.</li>
+<li><strong>AGENTS.md for compound learning.</strong> Document patterns, gotchas, and style preferences. Every session reads it, every session updates it. Knowledge compounds.
+Start with pattern one today. Graduate to Agent Teams next week. Layer on quality gates and compound learning from there.</li>
+</ul>
+</body>
+</html>

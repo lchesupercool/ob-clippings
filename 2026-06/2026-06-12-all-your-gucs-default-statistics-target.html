@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026-06-12-all-your-gucs-default-statistics-target</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>title: "All Your GUCs in a Row: default_statistics_target"
+source: "https://thebuild.com/blog/all-your-gucs-in-a-row-defaultstatisticstarget/"
+saved: "2026-06-12 14:21:52 CST"
+published: "2026-06-11T18:00:00-07:00"</p>
+<hr />
+<h1>All Your GUCs in a Row: default_statistics_target</h1>
+<p><img alt="Image 1" src="../../assets/all-your-gucs-default-statistics-target/fcfb48bb733548e58ca55137b06be995.png" /></p>
+<p><code>default_statistics_target</code> is one of the most-recommended and least-explained parameters in PostgreSQL. Tuning guides say “raise it to 500 for data warehouses” with the confidence of scripture and rarely a word about what the number <em>is</em>. The default is <code>100</code>, the range is 1 to 10,000, the context is <code>user</code>, and what the number actually controls is the size of three things <code>ANALYZE</code> builds for every column. Let’s look at the things.</p>
+<h2>What the target buys you</h2>
+<p>When <code>ANALYZE</code> examines a column, it produces (among a few scalars like null fraction and estimated distinct count) two structures the planner leans on constantly, both stored in <code>pg_statistic</code> and visible through <code>pg_stats</code>. The <strong>most-common-values list</strong> (<code>most_common_vals</code>, with <code>most_common_freqs</code>) records up to <em>target</em> values and their frequencies — this is how the planner estimates equality predicates like <code>WHERE state = 'TX'</code>. The <strong>histogram</strong> (<code>histogram_bounds</code>) divides the remaining values into up to <em>target</em> equal-population buckets — this is how it estimates range predicates like <code>WHERE id BETWEEN 5000 AND 10000</code>. The statistics target is, literally, the maximum number of entries in each. At 100, the planner can know your hundred most common values exactly and slice the rest of the distribution into a hundred buckets.</p>
+<p>The target also sets the sample size, and the formula is pleasingly specific: <code>ANALYZE</code> samples <code>300 × target</code> rows — 30,000 at the default. The 300 isn’t arbitrary; the comment in <code>analyze.c</code> traces it to a 1998 paper on random sampling for histogram construction, which derives a bound the source rounds from 305 down to 300. So the number you set is doing double duty: it sizes the statistics arrays <em>and</em> scales how much of the table gets read to build them.</p>
+<p>That double duty is the entire tuning tradeoff. Raise the target and <code>ANALYZE</code> reads more rows and takes longer — on every autovacuum-triggered analyze, on every table, forever. The planner also pays a little more at plan time, because estimating a predicate means scanning those arrays, and a 10,000-entry MCV list is scanned at every query that touches the column. Statistics aren’t free at either end.</p>
+<h2>When 100 isn’t enough</h2>
+<p>The failure mode has a specific shape: a column whose distribution has more “common” values than the MCV list can hold. Picture a <code>customer_id</code> on a billion-row events table where the top ten thousand customers follow a power law. With a target of 100, the planner knows the top hundred exactly; customer number 4,000 — still wildly more frequent than average — falls off the list and gets estimated from the leftover average, which can be off by orders of magnitude. The symptom is the classic one: <code>EXPLAIN ANALYZE</code> shows estimated rows and actual rows diverging by 100× on a predicate against a skewed column, and the bad row estimate cascades into a bad join order or a nested loop that should have been a hash join.</p>
+<p>The fix is almost never the global knob. It’s per-column:</p>
+<pre><code>ALTER TABLE events ALTER COLUMN customer_id SET STATISTICS 1000;
+ANALYZE events;
+</code></pre>
+<p>That raises the target for the one column whose distribution needs it, costs extra sampling only on that table, and leaves your hundreds of well-behaved boolean and timestamp columns at the cheap default. (Remember the <code>ANALYZE</code> — the new target does nothing until statistics are rebuilt.) There’s a less-known variant worth having in your kit: expression indexes get statistics too, and <code>ALTER INDEX ... ALTER COLUMN expr SET STATISTICS n</code> tunes the target for an indexed expression that has no real column to alter — Alexander Korotkov documented turning a 1,140% estimation error into 23% that way.</p>
+<p>Raising the <em>global</em> default makes sense in one situation: an analytics or warehouse workload where most queries are large scans and joins over skewed data, plan quality is everything, and a slower <code>ANALYZE</code> is a rounding error against hour-long queries. There, 500 or 1,000 globally is defensible and common. For OLTP, the global default of 100 is genuinely fine, and the columns that need more are few enough to name individually.</p>
+<p>Two closing cautions. First, don’t reach for 10,000 reflexively — <code>pg_statistic</code> bloats, every <code>ANALYZE</code> slows, and per-query planning pays the array-scan tax on every estimate; Crunchy Data’s phrasing is right that maxing the target “would make ANALYZE and vacuum slow and expensive.” Second, know when the target can’t help: if your misestimates come from <em>correlated</em> columns — city implies country, zip implies state — no amount of per-column histogram resolution fixes the planner’s column-independence assumption. That’s what <code>CREATE STATISTICS</code> (extended statistics) is for, and it’s a different tool than the one this post is about. The statistics target makes each column’s solo portrait sharper; it cannot teach the planner that two columns are related. Raise the target when a skewed single column is being mis-estimated, reach for extended statistics when the <em>combination</em> is the problem, and leave the global default alone until your workload looks like a warehouse.</p>
+<hr />
+<p>Source: https://thebuild.com/blog/all-your-gucs-in-a-row-defaultstatisticstarget/
+Saved: 2026-06-12 14:21:52 CST</p>
+</body>
+</html>

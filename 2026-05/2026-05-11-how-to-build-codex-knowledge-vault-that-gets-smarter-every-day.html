@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026-05-11-how-to-build-codex-knowledge-vault-that-gets-smarter-every-day</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>title: "How to Build Codex Knowledge Vault That Gets Smarter Every Day Without You Doing Anything"
+author: "Ziwen (@ziwenxu_)"
+source: "https://x.com/ziwenxu_/status/2053241837453029439?s=52"
+article_url: "https://x.com/ziwenxu_/article/2053241837453029439"
+published: "2026-05-10 06:32 +0800"
+saved: "2026-05-11 07:01:37 +0800"
+tags: [x-twitter, codex, obsidian, knowledge-management, ai-agents]</p>
+<hr />
+<h1>How to Build Codex Knowledge Vault That Gets Smarter Every Day Without You Doing Anything</h1>
+<p>Author: <a href="https://x.com/ziwenxu_">Ziwen (@ziwenxu_)</a></p>
+<p><img alt="Article image" src="../../assets/how-to-build-codex-knowledge-vault-that-gets-smarter-every-day/image-1.jpg" /></p>
+<p><strong>Stop bookmarking things your AI will never see.</strong></p>
+<p>I believe most of you have already heard of Obsidian knowledge bases for LLMs. I used it that way for a long time, but I got tired of the "work about work." Keeping my context and my AI up to date manually was a second job I didn't want.</p>
+<p>Now, I’ve automated the entire loop. Everything I consume on X, I just bookmark. At the end of every day, my <strong>Codex</strong> automatically pulls those bookmarks and consumes them as permanent memory. I don’t do anything. It’s all automatic.</p>
+<p><strong>The Problem: Context Debt</strong></p>
+<p>Most people treat knowledge like a filing cabinet they save it, then forget it. AI has the same problem. Every new chat starts cold because your AI doesn't know your history. Re-explaining your stack and goals every morning is a tax on your productivity.</p>
+<p>The bottleneck isn't the model. It’s Context Debt.</p>
+<p>We’re moving away from the "Chat Window" and into a Persistent Knowledge Layer. Your Obsidian vault shouldn't be a library; it should be the Brain of your personal assistant.</p>
+<h2>The 5 Layer Neural Structure</h2>
+<p>To make this work, we stop organizing for humans and start organizing for the machine. I use a Flat Architecture that Codex navigates like a mental map:</p>
+<ul>
+<li><strong>AGENTS.md:</strong> This is the master file Codex reads first. It’s the "Global Variable" of your life. It tells the AI exactly who you are, what your 2026 goals look like, and your non-negotiable rules like "Never give me boilerplate" or "Always check my /notes before suggesting anything."</li>
+<li><strong>inbox/:</strong> The staging area. Every article, technical doc, or voice note lands here first. No manual filing, no tagging, no friction. This is the "Raw RAM" of your system.</li>
+<li><strong>notes/:</strong> This is your personal Wikipedia. Once information is processed, it lives here as interlinked facts API schemas, framework deep-dives, and research papers. This is the "Source of Truth."</li>
+<li><strong>ideas/:</strong> This is the most important part. It’s your original thinking and your "vibe." Storing your unique logic here is what prevents Codex from giving you generic AI answers and forces it to solve problems the way you would.</li>
+<li><strong>projects/:</strong> Where the work happens. Because your projects sit next to your notes, Codex can grab an insight from a paper you read three months ago and apply it to the code you are shipping right now.</li>
+</ul>
+<p>This 5-layer structure is your Day One baseline. To make it work, I use Obsidian as the local 'Brain' and a custom <a href="https://x.com/ziwenxu_">Codex Skill</a> I built to bridge the gap between my notes and the LLM.</p>
+<h2>The Rule of Constant Refinement</h2>
+<p>Don't be afraid to break the structure. The moment you hit a new domain or a complex concept that doesn't fit, tell your agent to carve out a new space for it.</p>
+<ul>
+<li><strong>Create New Contexts:</strong> If you’re deep diving into a new framework or a specific niche like "Local LLM Fine-tuning," spin up a dedicated folder for it immediately.</li>
+<li><strong>Force the Update:</strong> Don't just move files around. Every time you change the structure, go back to your AGENTS.md or your master system prompt and tell your agents: "The map has changed. Here is the new logic for how we store and retrieve this specific data."</li>
+</ul>
+<h2>Building a 24/7 Intelligence Assistant</h2>
+<p>The number one reason knowledge systems fail is Capture Friction. I built a "Passive Ingest" system so I don't "do" the work; the pipes do.</p>
+<p>Instead of manual bookmarking, we use Browser-use or Computer Use in Codex to scrape your digital highlights once per day. This ensures that you don't need to start a new habit and still able to extract all your knowledges.</p>
+<h2>The X (Twitter) Extraction Prompt</h2>
+<pre><code class="language-plaintext">&quot;use @computer Navigate to my X Bookmarks. Extract the content of every thread saved in the last 24 hours. Strip out the ads and engagement bait. Convert the core insights into a clean Markdown file titled YYYY-MM-DD-X-Insights.md and save it to my /inbox.&quot;
+</code></pre>
+<h2>The YouTube Knowledge Prompt</h2>
+<pre><code class="language-plaintext">&quot;Access my YouTube with @computer 'Watch Later' list. For every video added today, pull the full transcript. Use your internal logic to summarize the technical 'How-To' or 'Big Idea' from each. Save these as individual Markdown files in my /inbox so I can search them locally.&quot;
+</code></pre>
+<h2>The Daily Evolution Prompt</h2>
+<pre><code class="language-plaintext">&quot;Audit all new files in the /inbox and /notes from the last 24 hours. Cross-reference them with our roadmap in AGENTS.md.
+MEMORY ENHANCEMENT: Identify new technical patterns or logic I need to internalize for our current projects.
+STRATEGIC SHIFT: Does this new information suggest a better way to execute our current tasks? If so, flag the contradiction.
+IMMEDIATE ACTION: Based on these upgrades, what is the single most high-leverage task for today? Update your internal memory and save the strategy to DAILY-BRIEF.md.&quot;
+</code></pre>
+<h2>The Weekly Self-Management Prompt</h2>
+<pre><code class="language-plaintext">&quot;Analyze all Daily Briefs and new intelligence from the past 7 days.
+EMERGING THESIS: What high-level skill or concept have we mastered this week?
+ARCHITECTURAL EVOLUTION: Reorganize our folders and concepts to reflect our current level of understanding. Create new specialized directories if our focus has shifted.
+FIRMWARE UPGRADE: Rewrite the 'Core Logic' section of AGENTS.md. Integrate everything we’ve learned this week so you start Monday morning as a more capable, more senior version of yourself.&quot;
+</code></pre>
+<p>Now you have successfully implemented a system that grows on its own.</p>
+<p>You aren't just filing transcripts and bookmarks; you are feeding an organism. Because of these daily and weekly audits, your Codex doesn't just "have" information it uses it to sharpen its own tools.</p>
+<h2>The Freshman Rule: Accuracy Over Ego</h2>
+<p>As your vault grows, agents get "cocky." They take shortcuts. To fix this, I enforce the Freshman Rule:</p>
+<ul>
+<li><strong>Cite the Source:</strong> Tell your agent it isn't allowed to make a technical decision unless it can link back to a specific file in your /notes. If the info isn't in the vault, the agent has to admit it's guessing.</li>
+<li><strong>The "Plan-First" Checkpoint:</strong> Never let an agent just start typing code. Force it to write a 3-sentence "Battle Plan" based on your current AGENTS.md before it touches the keyboard.</li>
+<li><strong>Kill the Assumptions:</strong> If a task contradicts a note you saved three months ago, the agent shouldn't try to be "clever." It needs to stop and ask you for the tie-breaker.</li>
+</ul>
+<p>Enjoy your fully Autonomously agent that get smarter everyday.</p>
+<p>This is the end of the "Cold Start."</p>
+<p>By the time I sit down at my M4 Mac Mini, my Codex has already spent the night scraping my bookmarks and updating its internal logic. I don’t wake up to a blank screen; I wake up to a Jarvis-style briefing from a partner that’s been working while I slept.</p>
+<p>I've stopped "using" AI. I’ve started directing it. Treat it like a partner. Give it the keys to your office.</p>
+<p>Follow <a href="https://x.com/ziwenxu_">@ziwenxu_</a> for the more tips, guide workflows, and weekly synthesis prompts behind this system. I'm posting every day.</p>
+<hr />
+<p>Source: <a href="https://x.com/ziwenxu_/status/2053241837453029439?s=52">https://x.com/ziwenxu_/status/2053241837453029439?s=52</a>
+Article: <a href="https://x.com/ziwenxu_/article/2053241837453029439">https://x.com/ziwenxu_/article/2053241837453029439</a>
+Saved: 2026-05-11 07:01:37 +0800</p>
+</body>
+</html>

@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中译-3.3. Creating the Plan Tree of a Single-Table Query  Hironobu SUZUKI @ InterDB</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<h2>---</h2>
+<h1>3.3. 创建单表查询的 plan tree</h1>
+<p>由于 planner 的处理过程非常复杂，本节先描述最简单的情形，即如何为单表查询创建 plan tree。更复杂的处理——也就是如何为多表查询创建 plan tree——将在 <code>Section 3.6</code> 中描述。</p>
+<p>PostgreSQL 中的 planner 执行以下三个步骤：</p>
+<ol>
+<li>执行预处理（preprocessing）。</li>
+<li>通过估算所有可能的 access path 的 cost，得到最便宜（cheapest）的 access path。</li>
+<li>基于最便宜的 path 创建 plan tree。</li>
+</ol>
+<p>access path 是估算 cost 的处理单元。例如，sequential scan、index scan、sort 以及各种 join 操作都有与之对应的 path。access path 仅在 planner 内部用于创建 plan tree。</p>
+<p>access path 最基础的数据结构是定义在 <code>pathnodes.h</code> 中的 <code>Path</code> 结构体，它对应 sequential scan。其他所有 access path 都以它为基础。具体细节将在下文的说明中描述。</p>
+<pre><code class="language-c">typedef struct PathKey
+{
+    pg_node_attr(no_read, no_query_jumble)
+
+    NodeTag        type;
+
+    /* the value that is ordered */
+    EquivalenceClass *pk_eclass pg_node_attr(copy_as_scalar, equal_as_scalar);
+    Oid            pk_opfamily;    /* index opfamily defining the ordering */
+    CompareType pk_cmptype;        /* sort direction (ASC or DESC) */
+    bool        pk_nulls_first; /* do NULLs come before normal values? */
+} PathKey;
+
+typedef struct Path
+{
+    pg_node_attr(no_copy_equal, no_read, no_query_jumble)
+
+    NodeTag        type;
+
+    /* tag identifying scan/join method */
+    NodeTag        pathtype;
+
+    /*
+     * the relation this path can build
+     *
+     * We do NOT print the parent, else we'd be in infinite recursion.  We can
+     * print the parent's relids for identification purposes, though.
+     */
+    RelOptInfo *parent pg_node_attr(write_only_relids);
+
+    /*
+     * list of Vars/Exprs, cost, width
+     *
+     * We print the pathtarget only if it's not the default one for the rel.
+     */
+    PathTarget *pathtarget pg_node_attr(write_only_nondefault_pathtarget);
+
+    /*
+     * parameterization info, or NULL if none
+     *
+     * We do not print the whole of param_info, since it's printed via
+     * RelOptInfo; it's sufficient and less cluttering to print just the
+     * required outer relids.
+     */
+    ParamPathInfo *param_info pg_node_attr(write_only_req_outer);
+
+    /* engage parallel-aware logic? */
+    bool        parallel_aware;
+    /* OK to use as part of parallel plan? */
+    bool        parallel_safe;
+    /* desired # of workers; 0 = not parallel */
+    int            parallel_workers;
+
+    /* estimated size/costs for path (see costsize.c for more info) */
+    Cardinality rows;            /* estimated number of result tuples */
+    int            disabled_nodes; /* count of disabled nodes */
+    Cost        startup_cost;    /* cost expended before fetching any tuples */
+    Cost        total_cost;        /* total cost (assuming all tuples fetched) */
+
+    /* sort ordering of path's output; a List of PathKey nodes; see above */
+    List       *pathkeys;
+} Path;
+</code></pre>
+<p>为了处理上述步骤，planner 在内部创建一个 <code>PlannerInfo</code> 结构体，用于保存 query tree、query 中涉及的 relation 相关信息、access path 等。</p>
+<pre><code class="language-c">/*----------
+ * PlannerInfo
+ *        Per-query information for planning/optimization
+ *
+ * This struct is conventionally called &quot;root&quot; in all the planner routines.
+ * It holds links to all of the planner's working state, in addition to the
+ * original Query.  Note that at present the planner extensively modifies
+ * the passed-in Query data structure; someday that should stop.
+ *
+ * For reasons explained in optimizer/optimizer.h, we define the typedef
+ * either here or in that header, whichever is read first.
+ *
+ * Not all fields are printed.  (In some cases, there is no print support for
+ * the field type; in others, doing so would lead to infinite recursion or
+ * bloat dump output more than seems useful.)
+ *
+ * NOTE: When adding new entries containing relids and relid bitmapsets,
+ * remember to check that they will be correctly processed by
+ * the remove_self_join_rel function - relid of removing relation will be
+ * correctly replaced with the keeping one.
+ *----------
+ */
+#ifndef HAVE_PLANNERINFO_TYPEDEF
+typedef struct PlannerInfo PlannerInfo;
+#define HAVE_PLANNERINFO_TYPEDEF 1
+#endif
+
+struct PlannerInfo
+{
+    pg_node_attr(no_copy_equal, no_read, no_query_jumble)
+
+    NodeTag        type;
+
+    /* the Query being planned */
+    Query       *parse;
+
+    /* global info for current planner run */
+    PlannerGlobal *glob;
+
+    /* 1 at the outermost Query */
+    Index        query_level;
+
+    /* NULL at outermost Query */
+    PlannerInfo *parent_root pg_node_attr(read_write_ignore);
+
+    /*
+     * plan_params contains the expressions that this query level needs to
+     * make available to a lower query level that is currently being planned.
+     * outer_params contains the paramIds of PARAM_EXEC Params that outer
+     * query levels will make available to this query level.
+     */
+    /* list of PlannerParamItems, see below */
+    List       *plan_params;
+    Bitmapset  *outer_params;
+
+    /*
+     * simple_rel_array holds pointers to &quot;base rels&quot; and &quot;other rels&quot; (see
+     * comments for RelOptInfo for more info).  It is indexed by rangetable
+     * index (so entry 0 is always wasted).  Entries can be NULL when an RTE
+     * does not correspond to a base relation, such as a join RTE or an
+     * unreferenced view RTE; or if the RelOptInfo hasn't been made yet.
+     */
+    struct RelOptInfo **simple_rel_array pg_node_attr(array_size(simple_rel_array_size));
+    /* allocated size of array */
+    int            simple_rel_array_size;
+
+    /*
+     * simple_rte_array is the same length as simple_rel_array and holds
+     * pointers to the associated rangetable entries.  Using this is a shade
+     * faster than using rt_fetch(), mostly due to fewer indirections.  (Not
+     * printed because it'd be redundant with parse-&gt;rtable.)
+     */
+    RangeTblEntry **simple_rte_array pg_node_attr(read_write_ignore);
+
+    /*
+     * append_rel_array is the same length as the above arrays, and holds
+     * pointers to the corresponding AppendRelInfo entry indexed by
+     * child_relid, or NULL if the rel is not an appendrel child.  The array
+     * itself is not allocated if append_rel_list is empty.  (Not printed
+     * because it'd be redundant with append_rel_list.)
+     */
+    struct AppendRelInfo **append_rel_array pg_node_attr(read_write_ignore);
+
+    /*
+     * all_baserels is a Relids set of all base relids (but not joins or
+     * &quot;other&quot; rels) in the query.  This is computed in deconstruct_jointree.
+     */
+    Relids        all_baserels;
+
+    /*
+     * outer_join_rels is a Relids set of all outer-join relids in the query.
+     * This is computed in deconstruct_jointree.
+     */
+    Relids        outer_join_rels;
+
+    /*
+     * all_query_rels is a Relids set of all base relids and outer join relids
+     * (but not &quot;other&quot; relids) in the query.  This is the Relids identifier
+     * of the final join we need to form.  This is computed in
+     * deconstruct_jointree.
+     */
+    Relids        all_query_rels;
+
+    /*
+     * join_rel_list is a list of all join-relation RelOptInfos we have
+     * considered in this planning run.  For small problems we just scan the
+     * list to do lookups, but when there are many join relations we build a
+     * hash table for faster lookups.  The hash table is present and valid
+     * when join_rel_hash is not NULL.  Note that we still maintain the list
+     * even when using the hash table for lookups; this simplifies life for
+     * GEQO.
+     */
+    List       *join_rel_list;
+    struct HTAB *join_rel_hash pg_node_attr(read_write_ignore);
+
+    /*
+     * When doing a dynamic-programming-style join search, join_rel_level[k]
+     * is a list of all join-relation RelOptInfos of level k, and
+     * join_cur_level is the current level.  New join-relation RelOptInfos are
+     * automatically added to the join_rel_level[join_cur_level] list.
+     * join_rel_level is NULL if not in use.
+     *
+     * Note: we've already printed all baserel and joinrel RelOptInfos above,
+     * so we don't dump join_rel_level or other lists of RelOptInfos.
+     */
+    /* lists of join-relation RelOptInfos */
+    List      **join_rel_level pg_node_attr(read_write_ignore);
+    /* index of list being extended */
+    int            join_cur_level;
+
+    /* init SubPlans for query */
+    List       *init_plans;
+
+    /*
+     * per-CTE-item list of subplan IDs (or -1 if no subplan was made for that
+     * CTE)
+     */
+    List       *cte_plan_ids;
+
+    /* List of Lists of Params for MULTIEXPR subquery outputs */
+    List       *multiexpr_params;
+
+    /* list of JoinDomains used in the query (higher ones first) */
+    List       *join_domains;
+
+    /* list of active EquivalenceClasses */
+    List       *eq_classes;
+
+    /* set true once ECs are canonical */
+    bool        ec_merging_done;
+
+    /* list of &quot;canonical&quot; PathKeys */
+    List       *canon_pathkeys;
+
+    /*
+     * list of OuterJoinClauseInfos for mergejoinable outer join clauses
+     * w/nonnullable var on left
+     */
+    List       *left_join_clauses;
+
+    /*
+     * list of OuterJoinClauseInfos for mergejoinable outer join clauses
+     * w/nonnullable var on right
+     */
+    List       *right_join_clauses;
+
+    /*
+     * list of OuterJoinClauseInfos for mergejoinable full join clauses
+     */
+    List       *full_join_clauses;
+
+    /* list of SpecialJoinInfos */
+    List       *join_info_list;
+
+    /* counter for assigning RestrictInfo serial numbers */
+    int            last_rinfo_serial;
+
+    /*
+     * all_result_relids is empty for SELECT, otherwise it contains at least
+     * parse-&gt;resultRelation.  For UPDATE/DELETE/MERGE across an inheritance
+     * or partitioning tree, the result rel's child relids are added.  When
+     * using multi-level partitioning, intermediate partitioned rels are
+     * included. leaf_result_relids is similar except that only actual result
+     * tables, not partitioned tables, are included in it.
+     */
+    /* set of all result relids */
+    Relids        all_result_relids;
+    /* set of all leaf relids */
+    Relids        leaf_result_relids;
+
+    /*
+     * list of AppendRelInfos
+     *
+     * Note: for AppendRelInfos describing partitions of a partitioned table,
+     * we guarantee that partitions that come earlier in the partitioned
+     * table's PartitionDesc will appear earlier in append_rel_list.
+     */
+    List       *append_rel_list;
+
+    /* list of RowIdentityVarInfos */
+    List       *row_identity_vars;
+
+    /* list of PlanRowMarks */
+    List       *rowMarks;
+
+    /* list of PlaceHolderInfos */
+    List       *placeholder_list;
+
+    /* array of PlaceHolderInfos indexed by phid */
+    struct PlaceHolderInfo **placeholder_array pg_node_attr(read_write_ignore, array_size(placeholder_array_size));
+    /* allocated size of array */
+    int            placeholder_array_size pg_node_attr(read_write_ignore);
+
+    /* list of ForeignKeyOptInfos */
+    List       *fkey_list;
+
+    /* desired pathkeys for query_planner() */
+    List       *query_pathkeys;
+
+    /* groupClause pathkeys, if any */
+    List       *group_pathkeys;
+
+    /*
+     * The number of elements in the group_pathkeys list which belong to the
+     * GROUP BY clause.  Additional ones belong to ORDER BY / DISTINCT
+     * aggregates.
+     */
+    int            num_groupby_pathkeys;
+
+    /* pathkeys of bottom window, if any */
+    List       *window_pathkeys;
+    /* distinctClause pathkeys, if any */
+    List       *distinct_pathkeys;
+    /* sortClause pathkeys, if any */
+    List       *sort_pathkeys;
+    /* set operator pathkeys, if any */
+    List       *setop_pathkeys;
+
+    /* Canonicalised partition schemes used in the query. */
+    List       *part_schemes pg_node_attr(read_write_ignore);
+
+    /* RelOptInfos we are now trying to join */
+    List       *initial_rels pg_node_attr(read_write_ignore);
+
+    /*
+     * Upper-rel RelOptInfos. Use fetch_upper_rel() to get any particular
+     * upper rel.
+     */
+    List       *upper_rels[UPPERREL_FINAL + 1] pg_node_attr(read_write_ignore);
+
+    /* Result tlists chosen by grouping_planner for upper-stage processing */
+    struct PathTarget *upper_targets[UPPERREL_FINAL + 1] pg_node_attr(read_write_ignore);
+
+    /*
+     * The fully-processed groupClause is kept here.  It differs from
+     * parse-&gt;groupClause in that we remove any items that we can prove
+     * redundant, so that only the columns named here actually need to be
+     * compared to determine grouping.  Note that it's possible for *all* the
+     * items to be proven redundant, implying that there is only one group
+     * containing all the query's rows.  Hence, if you want to check whether
+     * GROUP BY was specified, test for nonempty parse-&gt;groupClause, not for
+     * nonempty processed_groupClause.  Optimizer chooses specific order of
+     * group-by clauses during the upper paths generation process, attempting
+     * to use different strategies to minimize number of sorts or engage
+     * incremental sort.  See preprocess_groupclause() and
+     * get_useful_group_keys_orderings() for details.
+     *
+     * Currently, when grouping sets are specified we do not attempt to
+     * optimize the groupClause, so that processed_groupClause will be
+     * identical to parse-&gt;groupClause.
+     */
+    List       *processed_groupClause;
+
+    /*
+     * The fully-processed distinctClause is kept here.  It differs from
+     * parse-&gt;distinctClause in that we remove any items that we can prove
+     * redundant, so that only the columns named here actually need to be
+     * compared to determine uniqueness.  Note that it's possible for *all*
+     * the items to be proven redundant, implying that there should be only
+     * one output row.  Hence, if you want to check whether DISTINCT was
+     * specified, test for nonempty parse-&gt;distinctClause, not for nonempty
+     * processed_distinctClause.
+     */
+    List       *processed_distinctClause;
+
+    /*
+     * The fully-processed targetlist is kept here.  It differs from
+     * parse-&gt;targetList in that (for INSERT) it's been reordered to match the
+     * target table, and defaults have been filled in.  Also, additional
+     * resjunk targets may be present.  preprocess_targetlist() does most of
+     * that work, but note that more resjunk targets can get added during
+     * appendrel expansion.  (Hence, upper_targets mustn't get set up till
+     * after that.)
+     */
+    List       *processed_tlist;
+
+    /*
+     * For UPDATE, this list contains the target table's attribute numbers to
+     * which the first N entries of processed_tlist are to be assigned.  (Any
+     * additional entries in processed_tlist must be resjunk.)  DO NOT use the
+     * resnos in processed_tlist to identify the UPDATE target columns.
+     */
+    List       *update_colnos;
+
+    /*
+     * Fields filled during create_plan() for use in setrefs.c
+     */
+    /* for GroupingFunc fixup (can't print: array length not known here) */
+    AttrNumber *grouping_map pg_node_attr(read_write_ignore);
+    /* List of MinMaxAggInfos */
+    List       *minmax_aggs;
+
+    /* context holding PlannerInfo */
+    MemoryContext planner_cxt pg_node_attr(read_write_ignore);
+
+    /* # of pages in all non-dummy tables of query */
+    Cardinality total_table_pages;
+
+    /* tuple_fraction passed to query_planner */
+    Selectivity tuple_fraction;
+    /* limit_tuples passed to query_planner */
+    Cardinality limit_tuples;
+
+    /*
+     * Minimum security_level for quals. Note: qual_security_level is zero if
+     * there are no securityQuals.
+     */
+    Index        qual_security_level;
+
+    /* true if any RTEs are RTE_JOIN kind */
+    bool        hasJoinRTEs;
+    /* true if any RTEs are marked LATERAL */
+    bool        hasLateralRTEs;
+    /* true if havingQual was non-null */
+    bool        hasHavingQual;
+    /* true if any RestrictInfo has pseudoconstant = true */
+    bool        hasPseudoConstantQuals;
+    /* true if we've made any of those */
+    bool        hasAlternativeSubPlans;
+    /* true once we're no longer allowed to add PlaceHolderInfos */
+    bool        placeholdersFrozen;
+    /* true if planning a recursive WITH item */
+    bool        hasRecursion;
+
+    /*
+     * The rangetable index for the RTE_GROUP RTE, or 0 if there is no
+     * RTE_GROUP RTE.
+     */
+    int            group_rtindex;
+
+    /*
+     * Information about aggregates. Filled by preprocess_aggrefs().
+     */
+    /* AggInfo structs */
+    List       *agginfos;
+    /* AggTransInfo structs */
+    List       *aggtransinfos;
+    /* number of aggs with DISTINCT/ORDER BY/WITHIN GROUP */
+    int            numOrderedAggs;
+    /* does any agg not support partial mode? */
+    bool        hasNonPartialAggs;
+    /* is any partial agg non-serializable? */
+    bool        hasNonSerialAggs;
+
+    /*
+     * These fields are used only when hasRecursion is true:
+     */
+    /* PARAM_EXEC ID for the work table */
+    int            wt_param_id;
+    /* a path for non-recursive term */
+    struct Path *non_recursive_path;
+
+    /*
+     * These fields are workspace for createplan.c
+     */
+    /* outer rels above current node */
+    Relids        curOuterRels;
+    /* not-yet-assigned NestLoopParams */
+    List       *curOuterParams;
+
+    /*
+     * These fields are workspace for setrefs.c.  Each is an array
+     * corresponding to glob-&gt;subplans.  (We could probably teach
+     * gen_node_support.pl how to determine the array length, but it doesn't
+     * seem worth the trouble, so just mark them read_write_ignore.)
+     */
+    bool       *isAltSubplan pg_node_attr(read_write_ignore);
+    bool       *isUsedSubplan pg_node_attr(read_write_ignore);
+
+    /* optional private data for join_search_hook, e.g., GEQO */
+    void       *join_search_private pg_node_attr(read_write_ignore);
+
+    /* Does this query modify any partition key columns? */
+    bool        partColsUpdated;
+
+    /* PartitionPruneInfos added in this query's plan. */
+    List       *partPruneInfos;
+};
+</code></pre>
+<p>本节将通过具体示例，描述如何从 query tree 创建 plan tree。</p>
+<p>本节内容</p>
+<ul>
+<li><code>3.3.1. Preprocessing</code></li>
+<li><code>3.3.2. Getting the Cheapest Access Path</code></li>
+<li><code>3.3.3. Creating a Plan Tree</code></li>
+</ul>
+<h2>3.3.1. 预处理（Preprocessing）</h2>
+<p>在创建 plan tree 之前，planner 会对存储在 PlannerInfo 结构体中的 query tree 做一些预处理。</p>
+<p>尽管预处理涉及很多步骤，本小节只讨论针对单表查询的主要预处理。其他预处理操作在 <code>Section 3.6</code> 中描述。</p>
+<p>预处理步骤包括：</p>
+<ol>
+<li>简化 target list、limit 子句等。
+    例如，定义在 <code>clauses.c</code> 中的 eval_const_expressions() 函数会把 '2 + 2' 重写为 '4'。</li>
+<li>规范化布尔表达式。
+    例如，'NOT (NOT a)' 被重写为 'a'。</li>
+<li>将 AND/OR 表达式扁平化。
+    在 SQL 标准中，AND 和 OR 是二元运算符，但在 PostgreSQL 内部，它们是 n 元运算符，且 planner 始终假设所有嵌套的 AND 和 OR 表达式都应被扁平化。
+    下面展示一个具体示例。考虑一个布尔表达式 '(id = 1) OR (id = 2) OR (id = 3)'。Figure 3.9(a) 展示了使用二元运算符时 query tree 的一部分。planner 通过使用三元运算符将该树扁平化以简化它。见 Figure 3.9(b)。
+<img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-09.png" /></li>
+</ol>
+<p>图 3.9. 扁平化 AND/OR 表达式的示例。</p>
+<h2>3.3.2. 获取最便宜的 access path</h2>
+<p>为了得到最便宜的 access path，planner 会估算所有可能的 access path 的 cost，并选出其中最便宜的一条。更具体地，planner 会执行以下操作：</p>
+<ol>
+<li>创建一个 <code>RelOptInfo</code> 结构体，用于存储 access path 及其对应的 cost。
+    RelOptInfo 结构体由 make_one_rel() 函数创建，并存储在 PlannerInfo 结构体的 <em>simple_rel_array</em> 中。见 Figure 3.10。在初始状态下，RelOptInfo 持有 <em>baserestrictinfo</em>，以及当目标表存在相关 index 时的 <em>indexlist</em>。baserestrictinfo 存储 query 的 WHERE 子句，indexlist 存储目标表相关的 index。</li>
+</ol>
+<pre><code class="language-c">typedef enum RelOptKind
+{
+    RELOPT_BASEREL,
+    RELOPT_JOINREL,
+    RELOPT_OTHER_MEMBER_REL,
+    RELOPT_OTHER_JOINREL,
+    RELOPT_UPPER_REL,
+    RELOPT_OTHER_UPPER_REL
+} RelOptKind;
+
+/*
+ * Is the given relation a simple relation i.e a base or &quot;other&quot; member
+ * relation?
+ */
+#define IS_SIMPLE_REL(rel) \
+    ((rel)-&gt;reloptkind == RELOPT_BASEREL || \
+     (rel)-&gt;reloptkind == RELOPT_OTHER_MEMBER_REL)
+
+/* Is the given relation a join relation? */
+#define IS_JOIN_REL(rel)    \
+    ((rel)-&gt;reloptkind == RELOPT_JOINREL || \
+     (rel)-&gt;reloptkind == RELOPT_OTHER_JOINREL)
+
+/* Is the given relation an upper relation? */
+#define IS_UPPER_REL(rel)    \
+    ((rel)-&gt;reloptkind == RELOPT_UPPER_REL || \
+     (rel)-&gt;reloptkind == RELOPT_OTHER_UPPER_REL)
+
+/* Is the given relation an &quot;other&quot; relation? */
+#define IS_OTHER_REL(rel) \
+    ((rel)-&gt;reloptkind == RELOPT_OTHER_MEMBER_REL || \
+     (rel)-&gt;reloptkind == RELOPT_OTHER_JOINREL || \
+     (rel)-&gt;reloptkind == RELOPT_OTHER_UPPER_REL)
+
+typedef struct RelOptInfo
+{
+    pg_node_attr(no_copy_equal, no_read, no_query_jumble)
+
+    NodeTag        type;
+
+    RelOptKind    reloptkind;
+
+    /*
+     * all relations included in this RelOptInfo; set of base + OJ relids
+     * (rangetable indexes)
+     */
+    Relids        relids;
+
+    /*
+     * size estimates generated by planner
+     */
+    /* estimated number of result tuples */
+    Cardinality rows;
+
+    /*
+     * per-relation planner control flags
+     */
+    /* keep cheap-startup-cost paths? */
+    bool        consider_startup;
+    /* ditto, for parameterized paths? */
+    bool        consider_param_startup;
+    /* consider parallel paths? */
+    bool        consider_parallel;
+
+    /*
+     * default result targetlist for Paths scanning this relation; list of
+     * Vars/Exprs, cost, width
+     */
+    struct PathTarget *reltarget;
+
+    /*
+     * materialization information
+     */
+    List       *pathlist;        /* Path structures */
+    List       *ppilist;        /* ParamPathInfos used in pathlist */
+    List       *partial_pathlist;    /* partial Paths */
+    struct Path *cheapest_startup_path;
+    struct Path *cheapest_total_path;
+    struct Path *cheapest_unique_path;
+    List       *cheapest_parameterized_paths;
+
+    /*
+     * parameterization information needed for both base rels and join rels
+     * (see also lateral_vars and lateral_referencers)
+     */
+    /* rels directly laterally referenced */
+    Relids        direct_lateral_relids;
+    /* minimum parameterization of rel */
+    Relids        lateral_relids;
+
+    /*
+     * information about a base rel (not set for join rels!)
+     */
+    Index        relid;
+    /* containing tablespace */
+    Oid            reltablespace;
+    /* RELATION, SUBQUERY, FUNCTION, etc */
+    RTEKind        rtekind;
+    /* smallest attrno of rel (often &lt;0) */
+    AttrNumber    min_attr;
+    /* largest attrno of rel */
+    AttrNumber    max_attr;
+    /* array indexed [min_attr .. max_attr] */
+    Relids       *attr_needed pg_node_attr(read_write_ignore);
+    /* array indexed [min_attr .. max_attr] */
+    int32       *attr_widths pg_node_attr(read_write_ignore);
+
+    /*
+     * Zero-based set containing attnums of NOT NULL columns.  Not populated
+     * for rels corresponding to non-partitioned inh==true RTEs.
+     */
+    Bitmapset  *notnullattnums;
+    /* relids of outer joins that can null this baserel */
+    Relids        nulling_relids;
+    /* LATERAL Vars and PHVs referenced by rel */
+    List       *lateral_vars;
+    /* rels that reference this baserel laterally */
+    Relids        lateral_referencers;
+    /* list of IndexOptInfo */
+    List       *indexlist;
+    /* list of StatisticExtInfo */
+    List       *statlist;
+    /* size estimates derived from pg_class */
+    BlockNumber pages;
+    Cardinality tuples;
+    double        allvisfrac;
+    /* indexes in PlannerInfo's eq_classes list of ECs that mention this rel */
+    Bitmapset  *eclass_indexes;
+    PlannerInfo *subroot;        /* if subquery */
+    List       *subplan_params; /* if subquery */
+    /* wanted number of parallel workers */
+    int            rel_parallel_workers;
+    /* Bitmask of optional features supported by the table AM */
+    uint32        amflags;
+
+    /*
+     * Information about foreign tables and foreign joins
+     */
+    /* identifies server for the table or join */
+    Oid            serverid;
+    /* identifies user to check access as; 0 means to check as current user */
+    Oid            userid;
+    /* join is only valid for current user */
+    bool        useridiscurrent;
+    /* use &quot;struct FdwRoutine&quot; to avoid including fdwapi.h here */
+    struct FdwRoutine *fdwroutine pg_node_attr(read_write_ignore);
+    void       *fdw_private pg_node_attr(read_write_ignore);
+
+    /*
+     * cache space for remembering if we have proven this relation unique
+     */
+    /* known unique for these other relid set(s) given in UniqueRelInfo(s) */
+    List       *unique_for_rels;
+    /* known not unique for these set(s) */
+    List       *non_unique_for_rels;
+
+    /*
+     * used by various scans and joins:
+     */
+    /* RestrictInfo structures (if base rel) */
+    List       *baserestrictinfo;
+    /* cost of evaluating the above */
+    QualCost    baserestrictcost;
+    /* min security_level found in baserestrictinfo */
+    Index        baserestrict_min_security;
+    /* RestrictInfo structures for join clauses involving this rel */
+    List       *joininfo;
+    /* T means joininfo is incomplete */
+    bool        has_eclass_joins;
+
+    /*
+     * used by partitionwise joins:
+     */
+    /* consider partitionwise join paths? (if partitioned rel) */
+    bool        consider_partitionwise_join;
+
+    /*
+     * inheritance links, if this is an otherrel (otherwise NULL):
+     */
+    /* Immediate parent relation (dumping it would be too verbose) */
+    struct RelOptInfo *parent pg_node_attr(read_write_ignore);
+    /* Topmost parent relation (dumping it would be too verbose) */
+    struct RelOptInfo *top_parent pg_node_attr(read_write_ignore);
+    /* Relids of topmost parent (redundant, but handy) */
+    Relids        top_parent_relids;
+
+    /*
+     * used for partitioned relations:
+     */
+    /* Partitioning scheme */
+    PartitionScheme part_scheme pg_node_attr(read_write_ignore);
+
+    /*
+     * Number of partitions; -1 if not yet set; in case of a join relation 0
+     * means it's considered unpartitioned
+     */
+    int            nparts;
+    /* Partition bounds */
+    struct PartitionBoundInfoData *boundinfo pg_node_attr(read_write_ignore);
+    /* True if partition bounds were created by partition_bounds_merge() */
+    bool        partbounds_merged;
+    /* Partition constraint, if not the root */
+    List       *partition_qual;
+
+    /*
+     * Array of RelOptInfos of partitions, stored in the same order as bounds
+     * (don't print, too bulky and duplicative)
+     */
+    struct RelOptInfo **part_rels pg_node_attr(read_write_ignore);
+
+    /*
+     * Bitmap with members acting as indexes into the part_rels[] array to
+     * indicate which partitions survived partition pruning.
+     */
+    Bitmapset  *live_parts;
+    /* Relids set of all partition relids */
+    Relids        all_partrels;
+
+    /*
+     * These arrays are of length partkey-&gt;partnatts, which we don't have at
+     * hand, so don't try to print
+     */
+
+    /* Non-nullable partition key expressions */
+    List      **partexprs pg_node_attr(read_write_ignore);
+    /* Nullable partition key expressions */
+    List      **nullable_partexprs pg_node_attr(read_write_ignore);
+} RelOptInfo;
+</code></pre>
+<ol>
+<li>估算所有可能的 access path 的 cost，并把这些 access path 加入 RelOptInfo 结构体。
+    此处理的详细步骤如下：<ol>
+<li>创建一条 path，估算 sequential scan 的 cost，并将估算出的 cost 写入该 path。然后把这条 path 加入 RelOptInfo 结构体的 pathlist。<ol>
+<li>如果目标表上存在相关的 index，则创建 index access path，估算所有 index scan 的 cost，并将估算出的 cost 写入 path。然后把这些 index path 加入 pathlist。</li>
+<li>如果可以执行
+<code>bitmap scan</code>，则创建 bitmap scan path，估算所有 bitmap scan 的 cost，并将估算出的 cost 写入 path。然后把这些 bitmap scan path 加入 pathlist。</li>
+</ol>
+</li>
+</ol>
+</li>
+<li>从 RelOptInfo 结构体的 pathlist 中取出最便宜的 access path。</li>
+<li>如有必要，估算 LIMIT、ORDER BY 和 ARREGISFDD 的 cost。</li>
+</ol>
+<p>为了让读者清楚理解 planner 的工作方式，下面给出两个具体示例。</p>
+<h3>3.3.2.1. 示例 1</h3>
+<p>首先，我们来看一个没有 index 的简单单表查询；这个 query 同时包含 WHERE 和 ORDER BY 子句。</p>
+<pre><code class="language-sql">testdb=# \d tbl_1
+     Table &quot;public.tbl_1&quot;
+ Column |  Type   | Modifiers
+--------+---------+-----------
+ id     | integer |
+ data   | integer |
+
+testdb=# SELECT * FROM tbl_1 WHERE id &lt; 300 ORDER BY data;
+</code></pre>
+<p>Figures 3.10 和 3.11 描绘了 planner 在此例中的处理过程。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-10.png" /></p>
+<p>图 3.10. 示例 1 中如何获得最便宜的 path</p>
+<ol>
+<li>创建一个 RelOptInfo 结构体，并把它存入 PlannerInfo 的 simple_rel_array。</li>
+<li>将 WHERE 子句加入 RelOptInfo 的 baserestrictinfo。
+    WHERE 子句 ' $id \lt 300$ ' 由定义在 <code>initsplan.c</code> 中的 distribute_restrictinfo_to_rels() 函数加入 baserestrictinfo。此外，由于目标表没有相关的 index，RelOptInfo 的 indexlist 为 NULL。</li>
+<li>由定义在
+    <code>planner.c</code> 中的 standard_qp_callback() 函数将排序用的 pathkey 添加到 PlannerInfo 的 sort_pathkeys 中。
+    <em>Pathkey</em> 是表示 path 排序次序的数据结构。在这个例子中，由于该 query 包含 ORDER BY 子句，其列为 'data'，因此列 'data' 作为一个 pathkey 被加入 sort_pathkeys。</li>
+<li>创建一个 path 结构体，使用 cost_seqscan 函数估算 sequential scan 的 cost，并将估算出的 cost 写入该 path。然后通过定义在
+    <code>pathnode.c</code> 中的 add_path() 函数把该 path 加入 RelOptInfo。
+    如前所述，<code>Path</code> 结构体同时包含 start-up cost 和 total cost，这些都由 cost_seqscan 等函数估算。</li>
+</ol>
+<p>在这个示例中，由于目标表没有 index，planner 只估算 sequential scan 的 cost。因此，最便宜的 access path 自动确定。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-11.png" /></p>
+<p>图 3.11. 示例 1 中如何获得最便宜的 path。（续自 Figure 3.10）</p>
+<ol>
+<li>创建一个新的 RelOptInfo 结构体来处理 ORDER BY 过程。
+    注意，这个新的 RelOptInfo 不持有 baserestrictinfo，也就是不含 WHERE 子句的信息。</li>
+<li>创建一条 sort path 并把它加入这个新的 RelOptInfo；然后将 sequential scan path 链接为 sort path 的 subpath。
+    <code>SortPath</code> 结构体由两个 path 结构体组成：path 和 subpath；path 存储关于 sort 操作自身的信息，subpath 则存储最便宜的 path。
+    请注意，sequential scan path 的 'parent' 项持有到旧 RelOptInfo 的链接，而旧 RelOptInfo 在其 baserestrictinfo 中存储了 WHERE 子句。因此在下一阶段——也就是创建 plan tree 时——尽管新的 RelOptInfo 没有 baserestrictinfo，planner 依然可以创建一个包含 WHERE 子句作为 'Filter' 的 sequential scan 节点。</li>
+</ol>
+<pre><code class="language-c">typedef struct SortPath
+{
+    Path    path;
+    Path    *subpath;        /* path representing input source */
+} SortPath;
+</code></pre>
+<p>基于此处得到的最便宜 access path，会生成一棵 plan tree。详情在 <code>Section 3.3.3</code> 中描述。</p>
+<h3>3.3.2.2. 示例 2</h3>
+<p>接下来，我们再看另一个带两个 index 的单表查询；这个 query 包含一个 WHERE 子句。</p>
+<pre><code class="language-sql">testdb=# \d tbl_2
+     Table &quot;public.tbl_2&quot;
+ Column |  Type   | Modifiers
+--------+---------+-----------
+ id     | integer | not null
+ data   | integer |
+Indexes:
+    &quot;tbl_2_pkey&quot; PRIMARY KEY, btree (id)
+    &quot;tbl_2_data_idx&quot; btree (data)
+
+testdb=# SELECT * FROM tbl_2 WHERE id &lt; 240;
+</code></pre>
+<p>Figures 3.12 至 3.14 描绘了 planner 在此例中的处理过程。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-12.png" /></p>
+<p>图 3.12. 示例 2 中如何获得最便宜的 path。</p>
+<ol>
+<li>创建一个 RelOptInfo 结构体。</li>
+<li>将 WHERE 子句加入 baserestrictinfo，并将目标表的 index 加入 indexlist。
+    在此示例中，WHERE 子句 ' id&lt;240 $id&lt;240$ $\text{id} \lt 240$ ' 被加入 baserestrictinfo，两个 index——<em>tbl_2_pkey</em> 和 <em>tbl_2_data_idx</em>——被加入 RelOptInfo 的 indexlist。</li>
+<li>创建一条 path，估算 sequential scan 的 cost，并将该 path 加入 RelOptInfo 的 pathlist。
+<img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-13.png" /></li>
+</ol>
+<p>图 3.13. 示例 2 中如何获得最便宜的 path。（续自 Figure 3.12）</p>
+<ol>
+<li>创建一个 <code>IndexPath</code>，估算 index scan 的 cost，并使用 add_path() 函数将该 IndexPath 加入 RelOptInfo 的 pathlist。
+    在此示例中，由于存在两个 index——<em>tbl_2_pkey</em> 和 <em>tbl_2_data_idx</em>——它们会按顺序被处理。<em>tbl_2_pkey</em> 被首先处理。
+    为 <em>tbl_2_pkey</em> 创建一个 IndexPath，并同时估算 start-up cost 和 total cost。在此示例中，<em>tbl_2_pkey</em> 是列 'id' 的相关 index，而 WHERE 子句包含列 'id'；因此 WHERE 子句被存储在 IndexPath 的 <em>indexclauses</em> 中。
+    注意，在向 pathlist 添加 access path 时，add_path() 函数按 total cost 的排序顺序添加 path。在本例中，该 index scan 的 total cost 小于 sequential scan 的 total cost；因此这条 index path 被插入在 sequential scan path 之前。</li>
+</ol>
+<pre><code class="language-c">typedef struct IndexPath
+{
+    Path        path;
+    IndexOptInfo *indexinfo;
+    List       *indexclauses;
+    List       *indexorderbys;
+    List       *indexorderbycols;
+    ScanDirection indexscandir;
+    Cost        indextotalcost;
+    Selectivity indexselectivity;
+} IndexPath;
+
+/*
+ * IndexOptInfo
+ *        Per-index information for planning/optimization
+ *
+ *        indexkeys[] and canreturn[] each have ncolumns entries.
+ *
+ *        indexcollations[], opfamily[], and opcintype[] each have nkeycolumns
+ *        entries.  These don't contain any information about INCLUDE columns.
+ *
+ *        sortopfamily[], reverse_sort[], and nulls_first[] have
+ *        nkeycolumns entries, if the index is ordered; but if it is unordered,
+ *        those pointers are NULL.
+ *
+ *        Zeroes in the indexkeys[] array indicate index columns that are
+ *        expressions; there is one element in indexprs for each such column.
+ *
+ *        For an ordered index, reverse_sort[] and nulls_first[] describe the
+ *        sort ordering of a forward indexscan; we can also consider a backward
+ *        indexscan, which will generate the reverse ordering.
+ *
+ *        The indexprs and indpred expressions have been run through
+ *        prepqual.c and eval_const_expressions() for ease of matching to
+ *        WHERE clauses. indpred is in implicit-AND form.
+ *
+ *        indextlist is a TargetEntry list representing the index columns.
+ *        It provides an equivalent base-relation Var for each simple column,
+ *        and links to the matching indexprs element for each expression column.
+ *
+ *        While most of these fields are filled when the IndexOptInfo is created
+ *        (by plancat.c), indrestrictinfo and predOK are set later, in
+ *        check_index_predicates().
+ */
+#ifndef HAVE_INDEXOPTINFO_TYPEDEF
+typedef struct IndexOptInfo IndexOptInfo;
+#define HAVE_INDEXOPTINFO_TYPEDEF 1
+#endif
+
+struct IndexPath;                /* forward declaration */
+
+struct IndexOptInfo
+{
+    pg_node_attr(no_copy_equal, no_read, no_query_jumble)
+
+    NodeTag        type;
+
+    /* OID of the index relation */
+    Oid            indexoid;
+    /* tablespace of index (not table) */
+    Oid            reltablespace;
+    /* back-link to index's table; don't print, else infinite recursion */
+    RelOptInfo *rel pg_node_attr(read_write_ignore);
+
+    /*
+     * index-size statistics (from pg_class and elsewhere)
+     */
+    /* number of disk pages in index */
+    BlockNumber pages;
+    /* number of index tuples in index */
+    Cardinality tuples;
+    /* index tree height, or -1 if unknown */
+    int            tree_height;
+
+    /*
+     * index descriptor information
+     */
+    /* number of columns in index */
+    int            ncolumns;
+    /* number of key columns in index */
+    int            nkeycolumns;
+
+    /*
+     * table column numbers of index's columns (both key and included
+     * columns), or 0 for expression columns
+     */
+    int           *indexkeys pg_node_attr(array_size(ncolumns));
+    /* OIDs of collations of index columns */
+    Oid           *indexcollations pg_node_attr(array_size(nkeycolumns));
+    /* OIDs of operator families for columns */
+    Oid           *opfamily pg_node_attr(array_size(nkeycolumns));
+    /* OIDs of opclass declared input data types */
+    Oid           *opcintype pg_node_attr(array_size(nkeycolumns));
+    /* OIDs of btree opfamilies, if orderable.  NULL if partitioned index */
+    Oid           *sortopfamily pg_node_attr(array_size(nkeycolumns));
+    /* is sort order descending? or NULL if partitioned index */
+    bool       *reverse_sort pg_node_attr(array_size(nkeycolumns));
+    /* do NULLs come first in the sort order? or NULL if partitioned index */
+    bool       *nulls_first pg_node_attr(array_size(nkeycolumns));
+    /* opclass-specific options for columns */
+    bytea      **opclassoptions pg_node_attr(read_write_ignore);
+    /* which index cols can be returned in an index-only scan? */
+    bool       *canreturn pg_node_attr(array_size(ncolumns));
+    /* OID of the access method (in pg_am) */
+    Oid            relam;
+
+    /*
+     * expressions for non-simple index columns; redundant to print since we
+     * print indextlist
+     */
+    List       *indexprs pg_node_attr(read_write_ignore);
+    /* predicate if a partial index, else NIL */
+    List       *indpred;
+
+    /* targetlist representing index columns */
+    List       *indextlist;
+
+    /*
+     * parent relation's baserestrictinfo list, less any conditions implied by
+     * the index's predicate (unless it's a target rel, see comments in
+     * check_index_predicates())
+     */
+    List       *indrestrictinfo;
+
+    /* true if index predicate matches query */
+    bool        predOK;
+    /* true if a unique index */
+    bool        unique;
+    /* true if the index was defined with NULLS NOT DISTINCT */
+    bool        nullsnotdistinct;
+    /* is uniqueness enforced immediately? */
+    bool        immediate;
+    /* true if index doesn't really exist */
+    bool        hypothetical;
+
+    /*
+     * Remaining fields are copied from the index AM's API struct
+     * (IndexAmRoutine).  These fields are not set for partitioned indexes.
+     */
+    bool        amcanorderbyop;
+    bool        amoptionalkey;
+    bool        amsearcharray;
+    bool        amsearchnulls;
+    /* does AM have amgettuple interface? */
+    bool        amhasgettuple;
+    /* does AM have amgetbitmap interface? */
+    bool        amhasgetbitmap;
+    bool        amcanparallel;
+    /* does AM have ammarkpos interface? */
+    bool        amcanmarkpos;
+    /* AM's cost estimator */
+    /* Rather than include amapi.h here, we declare amcostestimate like this */
+    void        (*amcostestimate) (struct PlannerInfo *, struct IndexPath *, double, Cost *, Cost *, Selectivity *, double *, double *) pg_node_attr(read_write_ignore);
+};
+</code></pre>
+<ol>
+<li>创建另一个 IndexPath，估算其他 index scan 的 cost，并把这条 index path 加入 RelOptInfo 的 pathlist。
+    接着，为 <em>tbl_2_data_idx</em> 创建一个 IndexPath，估算其 cost，并将该 IndexPath 加入 pathlist。在本例中，没有与 <em>tbl_2_data_idx</em> index 相关的 WHERE 子句；因此 index clauses 为 NULL。</li>
+</ol>
+<p>注</p>
+<p>add_path() 函数并非总是会把 path 加入。由于此操作较为复杂，相关细节在此从略。如需详情，请参阅 add_path() 函数的注释。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-14.png" /></p>
+<p>图 3.14. 示例 2 中如何获得最便宜的 path。（续自 Figure 3.13）</p>
+<ol>
+<li>创建一个新的 RelOptInfo 结构体。</li>
+<li>把最便宜的 path 加入新 RelOptInfo 的 pathlist。
+    在此示例中，最便宜的 path 是使用 index <em>tbl_2_pkey</em> 的 index path；因此这条 path 被加入新 RelOptInfo 的 pathlist。</li>
+</ol>
+<h2>3.3.3. 创建 Plan Tree</h2>
+<p>在最后阶段，planner 基于最便宜的 path 生成 plan tree。</p>
+<p>plan tree 的根是定义在 <code>plannodes.h</code> 中的 <code>PlannedStmt</code> 结构体。它包含十九个字段，这里只列出其中四个有代表性的字段：</p>
+<ul>
+<li><strong>commandType</strong> 存储操作的类型，例如 SELECT、UPDATE 或 INSERT。</li>
+<li><strong>rtable</strong> 存储 rangeTable 条目。</li>
+<li><strong>relationOids</strong> 存储此 query 涉及的相关表的 oid。</li>
+<li><strong>plantree</strong> 存储由 plan node 组成的 plan tree，其中每个 node 对应一个具体的操作，例如 sequential scan、sort 和 index scan。</li>
+</ul>
+<pre><code class="language-c">typedef struct PlannedStmt
+{
+    pg_node_attr(no_equal, no_query_jumble)
+
+    NodeTag        type;
+
+    /* select|insert|update|delete|merge|utility */
+    CmdType        commandType;
+
+    /* query identifier (copied from Query) */
+    int64        queryId;
+
+    /* plan identifier (can be set by plugins) */
+    int64        planId;
+
+    /* is it insert|update|delete|merge RETURNING? */
+    bool        hasReturning;
+
+    /* has insert|update|delete|merge in WITH? */
+    bool        hasModifyingCTE;
+
+    /* do I set the command result tag? */
+    bool        canSetTag;
+
+    /* redo plan when TransactionXmin changes? */
+    bool        transientPlan;
+
+    /* is plan specific to current role? */
+    bool        dependsOnRole;
+
+    /* parallel mode required to execute? */
+    bool        parallelModeNeeded;
+
+    /* which forms of JIT should be performed */
+    int            jitFlags;
+
+    /* tree of Plan nodes */
+    struct Plan *planTree;
+
+    /*
+     * List of PartitionPruneInfo contained in the plan
+     */
+    List       *partPruneInfos;
+
+    /* list of RangeTblEntry nodes */
+    List       *rtable;
+
+    /*
+     * RT indexes of relations that are not subject to runtime pruning or are
+     * needed to perform runtime pruning
+     */
+    Bitmapset  *unprunableRelids;
+
+    /*
+     * list of RTEPermissionInfo nodes for rtable entries needing one
+     */
+    List       *permInfos;
+
+    /* rtable indexes of target relations for INSERT/UPDATE/DELETE/MERGE */
+    /* integer list of RT indexes, or NIL */
+    List       *resultRelations;
+
+    /* list of AppendRelInfo nodes */
+    List       *appendRelations;
+
+    /*
+     * Plan trees for SubPlan expressions; note that some could be NULL
+     */
+    List       *subplans;
+
+    /* indices of subplans that require REWIND */
+    Bitmapset  *rewindPlanIDs;
+
+    /* a list of PlanRowMark's */
+    List       *rowMarks;
+
+    /* OIDs of relations the plan depends on */
+    List       *relationOids;
+
+    /* other dependencies, as PlanInvalItems */
+    List       *invalItems;
+
+    /* type OIDs for PARAM_EXEC Params */
+    List       *paramExecTypes;
+
+    /* non-null if this is utility stmt */
+    Node       *utilityStmt;
+
+    /* statement location in source string (copied from Query) */
+    /* start location, or -1 if unknown */
+    ParseLoc    stmt_location;
+    /* length in bytes; 0 means &quot;rest of string&quot; */
+    ParseLoc    stmt_len;
+} PlannedStmt;
+</code></pre>
+<p>如上所述，plan tree 由各种 plan node 组成。<code>PlanNode</code> 结构体是基础 node，其他所有 node 都包含它。例如，用于 sequential scan 的 <code>SeqScanNode</code> 由一个 PlanNode 和一个整型变量 'scanrelid' 组成。PlanNode 包含十四个字段，下面列出其中七个有代表性的字段。</p>
+<ul>
+<li><strong>start-up cost</strong> 和 <strong>total_cost</strong> 是该 node 对应操作的估算 cost。</li>
+<li><strong>rows</strong> 是要扫描的行数，由 planner 估算。</li>
+<li><strong>targetlist</strong> 存储 query tree 中所含的 target list 项。</li>
+<li><strong>qual</strong> 是一个 list，用于存储 qual 条件。</li>
+<li><strong>lefttree</strong> 和 <strong>righttree</strong> 是用于添加子 node 的 node。</li>
+</ul>
+<pre><code class="language-c">/* ----------------
+ *        Plan node
+ *
+ * All plan nodes &quot;derive&quot; from the Plan structure by having the
+ * Plan structure as the first field.  This ensures that everything works
+ * when nodes are cast to Plan's.  (node pointers are frequently cast to Plan*
+ * when passed around generically in the executor)
+ *
+ * We never actually instantiate any Plan nodes; this is just the common
+ * abstract superclass for all Plan-type nodes.
+ * ----------------
+ */
+typedef struct Plan
+{
+    pg_node_attr(abstract, no_equal, no_query_jumble)
+
+    NodeTag        type;
+
+    /*
+     * estimated execution costs for plan (see costsize.c for more info)
+     */
+    /* count of disabled nodes */
+    int            disabled_nodes;
+    /* cost expended before fetching any tuples */
+    Cost        startup_cost;
+    /* total cost (assuming all tuples fetched) */
+    Cost        total_cost;
+
+    /*
+     * planner's estimate of result size of this plan step
+     */
+    /* number of rows plan is expected to emit */
+    Cardinality plan_rows;
+    /* average row width in bytes */
+    int            plan_width;
+
+    /*
+     * information needed for parallel query
+     */
+    /* engage parallel-aware logic? */
+    bool        parallel_aware;
+    /* OK to use as part of parallel plan? */
+    bool        parallel_safe;
+
+    /*
+     * information needed for asynchronous execution
+     */
+    /* engage asynchronous-capable logic? */
+    bool        async_capable;
+
+    /*
+     * Common structural data for all Plan types.
+     */
+    /* unique across entire final plan tree */
+    int            plan_node_id;
+    /* target list to be computed at this node */
+    List       *targetlist;
+    /* implicitly-ANDed qual conditions */
+    List       *qual;
+    /* input plan tree(s) */
+    struct Plan *lefttree;
+    struct Plan *righttree;
+    /* Init Plan nodes (un-correlated expr subselects) */
+    List       *initPlan;
+
+    /*
+     * Information for management of parameter-change-driven rescanning
+     *
+     * extParam includes the paramIDs of all external PARAM_EXEC params
+     * affecting this plan node or its children.  setParam params from the
+     * node's initPlans are not included, but their extParams are.
+     *
+     * allParam includes all the extParam paramIDs, plus the IDs of local
+     * params that affect the node (i.e., the setParams of its initplans).
+     * These are _all_ the PARAM_EXEC params that affect this node.
+     */
+    Bitmapset  *extParam;
+    Bitmapset  *allParam;
+} Plan;
+</code></pre>
+<pre><code class="language-c">/*
+ * ==========
+ * Scan nodes
+ *
+ * Scan is an abstract type that all relation scan plan types inherit from.
+ * ==========
+ */
+typedef struct Scan
+{
+    pg_node_attr(abstract)
+
+    Plan        plan;
+    /* relid is index into the range table */
+    Index        scanrelid;
+} Scan;
+
+/* ----------------
+ *        sequential scan node
+ * ----------------
+ */
+typedef struct SeqScan
+{
+    Scan        scan;
+} SeqScan;
+</code></pre>
+<p>下文将描述两个 plan tree，它们是基于上一小节示例中展示的最便宜 path 生成的。</p>
+<h3>3.3.3.1. 示例 1</h3>
+<p>第一个例子是 <code>Section 3.3.2.1</code> 示例中生成的 plan tree。Figure 3.11 所示的最便宜 path 是由一条 sort path 和一条 sequential scan path 组成的树。根 path 是 sort path，子 path 是 sequential scan path。</p>
+<p>尽管省略了详细说明，但不难理解 plan tree 几乎可以直接从最便宜的 path 生成。</p>
+<p>在此示例中，一个 <code>SortNode</code> 被加入 PlannedStmt 结构体的 plantree，而一个 SeqScanNode 被加入 SortNode 的 lefttree。见 Figure 3.15(a)。</p>
+<pre><code class="language-c">/* ----------------
+ *        sort node
+ * ----------------
+ */
+typedef struct Sort
+{
+    Plan        plan;
+
+    /* number of sort-key columns */
+    int            numCols;
+
+    /* their indexes in the target list */
+    AttrNumber *sortColIdx pg_node_attr(array_size(numCols));
+
+    /* OIDs of operators to sort them by */
+    Oid           *sortOperators pg_node_attr(array_size(numCols));
+
+    /* OIDs of collations */
+    Oid           *collations pg_node_attr(array_size(numCols));
+
+    /* NULLS FIRST/LAST directions */
+    bool       *nullsFirst pg_node_attr(array_size(numCols));
+} Sort;
+</code></pre>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-15.png" /></p>
+<p>图 3.15. plan tree 示例。</p>
+<p>在 SortNode 中，lefttree 指向 SeqScanNode。</p>
+<p>在 SeqScanNode 中，qual 持有 WHERE 子句 ' id&lt;300 $id&lt;300$ $\text{id} \lt 300$ '。</p>
+<h3>3.3.3.2. 示例 2</h3>
+<p>第二个例子是 <code>Section 3.3.2.2</code> 示例中生成的 plan tree。Figure 3.14 所示的最便宜 path 是 index scan path，因此该 plan tree 仅由一个 <code>IndexScanNode</code> 结构体组成。见 Figure 3.15(b)。</p>
+<pre><code class="language-c">/* ----------------
+ *        index scan node
+ *
+ * indexqualorig is an implicitly-ANDed list of index qual expressions, each
+ * in the same form it appeared in the query WHERE condition.  Each should
+ * be of the form (indexkey OP comparisonval) or (comparisonval OP indexkey).
+ * The indexkey is a Var or expression referencing column(s) of the index's
+ * base table.  The comparisonval might be any expression, but it won't use
+ * any columns of the base table.  The expressions are ordered by index
+ * column position (but items referencing the same index column can appear
+ * in any order).  indexqualorig is used at runtime only if we have to recheck
+ * a lossy indexqual.
+ *
+ * indexqual has the same form, but the expressions have been commuted if
+ * necessary to put the indexkeys on the left, and the indexkeys are replaced
+ * by Var nodes identifying the index columns (their varno is INDEX_VAR and
+ * their varattno is the index column number).
+ *
+ * indexorderbyorig is similarly the original form of any ORDER BY expressions
+ * that are being implemented by the index, while indexorderby is modified to
+ * have index column Vars on the left-hand side.  Here, multiple expressions
+ * must appear in exactly the ORDER BY order, and this is not necessarily the
+ * index column order.  Only the expressions are provided, not the auxiliary
+ * sort-order information from the ORDER BY SortGroupClauses; it's assumed
+ * that the sort ordering is fully determinable from the top-level operators.
+ * indexorderbyorig is used at runtime to recheck the ordering, if the index
+ * cannot calculate an accurate ordering.  It is also needed for EXPLAIN.
+ *
+ * indexorderbyops is a list of the OIDs of the operators used to sort the
+ * ORDER BY expressions.  This is used together with indexorderbyorig to
+ * recheck ordering at run time.  (Note that indexorderby, indexorderbyorig,
+ * and indexorderbyops are used for amcanorderbyop cases, not amcanorder.)
+ *
+ * indexorderdir specifies the scan ordering, for indexscans on amcanorder
+ * indexes (for other indexes it should be &quot;don't care&quot;).
+ * ----------------
+ */
+typedef struct Scan
+{
+    pg_node_attr(abstract)
+
+    Plan        plan;
+    Index        scanrelid;        /* relid is index into the range table */
+} Scan;
+
+typedef struct IndexScan
+{
+    Scan        scan;
+    /* OID of index to scan */
+    Oid            indexid;
+    /* list of index quals (usually OpExprs) */
+    List       *indexqual;
+    /* the same in original form */
+    List       *indexqualorig;
+    /* list of index ORDER BY exprs */
+    List       *indexorderby;
+    /* the same in original form */
+    List       *indexorderbyorig;
+    /* OIDs of sort ops for ORDER BY exprs */
+    List       *indexorderbyops;
+    /* forward or backward or don't care */
+    ScanDirection indexorderdir;
+} IndexScan;
+</code></pre>
+<p>在此示例中，WHERE 子句 ' id&lt;240 $id&lt;240$ $\text{id} \lt 240$ ' 是一个 access predicate，因此它被存储在 IndexScanNode 的 indexqual 中。</p>
+</body>
+</html>

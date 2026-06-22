@@ -1,5 +1,3 @@
----
----
 
 # Clippings Index
 

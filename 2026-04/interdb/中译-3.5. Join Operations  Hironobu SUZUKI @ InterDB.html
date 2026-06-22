@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中译-3.5. Join Operations  Hironobu SUZUKI @ InterDB</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<h1>3.5. Join 操作</h1>
+<p>PostgreSQL 支持三种 join 操作：nested loop join、merge join 和 hash join。PostgreSQL 中的 nested loop join 和 merge join 各自还有若干变体。</p>
+<p>在接下来的内容中，我们假设读者已经熟悉这三种 join 的基本行为。</p>
+<p>如果你对这些术语不熟悉，请参阅以下参考资料：</p>
+<p>参考文献</p>
+<ol>
+<li>Abraham Silberschatz, Henry F. Korth, and S. Sudarshan, "
+    <code>Database System Concepts</code>", McGraw-Hill Education, ISBN-13: 978-0073523323</li>
+<li>Thomas M. Connolly, and Carolyn E. Begg, "
+    <code>Database Systems</code>", Pearson, ISBN-13: 978-0321523068</li>
+</ol>
+<p>不过，由于关于 PostgreSQL 所支持的带 skew 的 hybrid hash join 缺少足够的说明，本章会对其做更详细的解释。</p>
+<p>需要注意的是，PostgreSQL 所支持的这三种 join 方法能够执行所有类型的 join 操作，不仅包括 INNER JOIN，也包括 LEFT/RIGHT OUTER JOIN、FULL OUTER JOIN 等等。然而，为了简化叙述，本章我们只聚焦于 NATURAL INNER JOIN。</p>
+<p>正如 <code>Section 3.2.4</code> 末尾所提到的，在多表 join 操作中，基数估计是在假设各列之间统计独立的前提下计算的。</p>
+<p>如果列之间存在相关性，估计的准确性就会下降，结果是查询规划器可能无法生成高效的执行计划。</p>
+<p>数据库工程师和管理员必须时刻牢记这一点。</p>
+</body>
+</html>

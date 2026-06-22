@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中译-5. Concurrency Control  Hironobu SUZUKI @ InterDB</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<h2>---</h2>
+<h1>5. Concurrency Control</h1>
+<p>Concurrency Control 是一种机制，用于在多个 transaction 在数据库中并发运行时，维护 ACID 中的两个属性 ==atomicity 与 isolation==。</p>
+<p>==Concurrency Control 大致分为三类技术==：<em>Multi-version Concurrency Control</em>（MVCC）、<em>Strict Two-Phase Locking</em>（S2PL）和 <em>Optimistic Concurrency Control</em>（OCC）。每种技术又有许多变体。</p>
+<p>在 MVCC 中，每次 ==写操作== 都会创建数据项的新版本，同时保留旧版本。当一个 transaction ==读取== 数据项时，系统会选择其中一个版本，以保证 ==单个 transaction 的 isolation==。MVCC 的主要优势在于 "<em>读者不阻塞写者，写者也不阻塞读者</em>"，==作为对比==，例如基于 S2PL 的系统在写者写入数据项时必须阻塞读者，因为写者需要获取该数据项的 exclusive lock。PostgreSQL 和一些 RDBMS 使用 ==一种称为 <strong>Snapshot Isolation (SI)</strong> 的 MVCC 变体。==</p>
+<p>为了实现 SI，某些 RDBMS（如 Oracle）使用 rollback segment。==在写入新数据项时，该数据项的旧版本会被写入 rollback segment，随后新数据项会被覆盖写入数据区域。==PostgreSQL 则使用一种更简单的方法。新的数据项直接被插入到相应的 table page 中。在读取数据项时，PostgreSQL 会通过应用 <strong>visibility check rules</strong>，为每一个 transaction 选择合适的数据项版本。</p>
+<p>SI 不允许 ANSI SQL-92 标准中定义的三种异常：==<em>Dirty Reads</em>、<em>Non-Repeatable Reads</em> 和 <em>Phantom Reads</em>。==然而，SI 无法实现真正的 serializability，因为它允许一些 serialization anomaly，例如 <em>Write Skew</em> 和 <em>Read-only Transaction Skew</em>。需要注意的是，基于经典 serializability 定义的 ANSI SQL-92 标准 <strong>不</strong> 等价于现代理论中的定义。</p>
+<p>为了处理这个问题，从 9.1 版本开始新增了 <strong>Serializable Snapshot Isolation (SSI)</strong>。SSI 可以检测 serialization anomaly，并可以解决由此类异常引起的冲突。因此，PostgreSQL 9.1 或更高版本提供了真正的 SERIALIZABLE isolation level。（此外，SQL Server 同样使用 SSI；Oracle 目前仍然只使用 SI。）</p>
+<p>Transaction Isolation Level in PostgreSQL</p>
+<p>PostgreSQL 实现的 transaction isolation level 如下表所示：</p>
+<table>
+<thead>
+<tr>
+<th>Isolation Level</th>
+<th>Dirty Reads</th>
+<th>Non-repeatable Read</th>
+<th>Phantom Read</th>
+<th>Serialization Anomaly</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>READ COMMITTED</td>
+<td>Not possible</td>
+<td>Possible</td>
+<td>Possible</td>
+<td>Possible</td>
+</tr>
+<tr>
+<td>REPEATABLE READ <sup>*1</sup></td>
+<td>Not possible</td>
+<td>Not possible</td>
+<td>Not possible in PG; See <code>Section 5.7.3.</code>    (Possible in ANSI SQL)</td>
+<td>Possible</td>
+</tr>
+<tr>
+<td>SERIALIZABLE</td>
+<td>Not possible</td>
+<td>Not possible</td>
+<td>Not possible</td>
+<td>Not possible</td>
+</tr>
+</tbody>
+</table>
+<p>*1：在 9.0 及更早版本中，这一级别被用作 "SERIALIZABLE"，因为它不允许 ANSI SQL-92 标准中定义的三种异常。然而，随着 9.1 版本中 SSI 的实现，该级别被改为 "REPEATABLE READ"，并引入了真正的 SERIALIZABLE 级别。</p>
+<p>Note</p>
+<p>PostgreSQL 对 DML（Data Manipulation Language，例如 SELECT、UPDATE、INSERT、DELETE）使用 SSI，对 DDL（Data Definition Language，例如 CREATE TABLE 等）使用 2PL。</p>
+</body>
+</html>

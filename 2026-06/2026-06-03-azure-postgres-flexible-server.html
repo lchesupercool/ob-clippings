@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026-06-03-azure-postgres-flexible-server</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>source_url: https://thebuild.com/blog/managed-postgres-examined-azure-database-for-postgresql-flexible-server/
+ingested: 2026-06-03
+author: Christophe Pettus (The Build)
+series: Managed Postgres, Examined (#5)
+previous: Aurora, Cloud SQL, AlloyDB</p>
+<hr />
+<h1>Managed Postgres, Examined: Azure Database for PostgreSQL Flexible Server</h1>
+<blockquote>
+<p>Azure 的托管 PG 有一个独特的 HA 架构：同步流复制在进程层而非存储层。standby 在提交路径里，这个设计决定了一切。</p>
+</blockquote>
+<h2>架构</h2>
+<p>Flexible Server = 社区 PG 进程跑在 Azure VM + Premium SSD。不是 fork，就是原版 PG。</p>
+<h3>HA：同步流复制（和其他人都不一样）</h3>
+<p><strong>RDS/Aurora/Cloud SQL/AlloyDB</strong> → 复制在存储层（block-level），数据库感知不到。</p>
+<p><strong>Flexible Server</strong> → 复制在 PG 的提交路径里（process-level）。</p>
+<ul>
+<li>主库的 commit 不返回给客户端，直到 WAL 在<strong>主库和备库都刷盘</strong></li>
+<li>等价于 <code>synchronous_commit = on</code>（remote_flush），不是 remote_apply</li>
+<li><code>synchronous_commit</code> 和 <code>synchronous_standby_names</code> 是微软管的，你不能改</li>
+</ul>
+<h3>两种 HA 模式</h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>备库位置</th>
+<th>延迟</th>
+<th>保护</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Same-zone</td>
+<td>同 AZ</td>
+<td>亚毫秒</td>
+<td>节点/机架</td>
+</tr>
+<tr>
+<td>Zone-redundant</td>
+<td>跨 AZ</td>
+<td>1-3ms/commit</td>
+<td>AZ 级</td>
+</tr>
+</tbody>
+</table>
+<h3>故障转移</h3>
+<ul>
+<li>健康检测 30-40s → 恢复+提升 60-120s 内完成</li>
+<li>连接断开，新连接等 DNS 传播</li>
+<li>提升后的新主库<strong>没有备库</strong>，需要等 Azure 重建 → <strong>故障转移后是 non-HA 窗口</strong></li>
+</ul>
+<h2>最大坑：备库在提交路径里</h2>
+<pre><code>每个 commit → 等待备库刷盘确认 → 才返回客户端
+</code></pre>
+<p>备库磁盘慢 / 网络抖 / 主机噪声 → <strong>主库 commit 延迟直接上升</strong>，和主库自身状态无关。</p>
+<h3>三个关键诊断要点</h3>
+<ol>
+<li>
+<p><strong>爆炸半径随 commit 数量缩放，不随 commit 大小</strong>。4KB 元数据提交和一个 50KB TOAST 提交在等备库这件事上完全一样疼。想降低敏感性 → 减少提交频率（batch），而不是减小行大小。</p>
+</li>
+<li>
+<p><strong>看 <code>SyncRep</code> 等待事件</strong>。出现在 <code>pg_stat_activity</code> 就是同步复制卡住了，不是主库本地问题。</p>
+</li>
+<li>
+<p><strong>取消一个卡住的 COMMIT 不会回滚它</strong>！会收到 <code>WARNING: canceling wait for synchronous replication due to user request</code>，事务返回 committed，只是丢了仲裁持久性。应用如果用"超时=失败=重试"逻辑 → 双重写入。</p>
+</li>
+</ol>
+<h3>zone-redundant 的每提交延迟税</h3>
+<p>每个 commit 多 1-3ms。几千 OLTP tps 的负载能感觉到。这是持久性合约的代价，不是配置错误。</p>
+<h3>你不能自己调持久性权衡</h3>
+<p>自建的可以 <code>synchronous_commit = local</code> 做批量导入再切回来，Flexible Server 不行。所有写操作统一交同步税。</p>
+<h2>其他值得注意的</h2>
+<h3>独有优势</h3>
+<ul>
+<li><strong>内置 PgBouncer</strong>：不需要单独的池化层（RDS 需要 RDS Proxy，Cloud SQL/Aurora 没有）</li>
+<li><strong>版本跟进好</strong>：社区 GA 后几个月就支持，因为跑的是社区 PG 不是 fork</li>
+<li><strong>直接参数管理</strong>：不通过参数组抽象层，跟改 postgresql.conf 一样</li>
+<li><strong>Entra ID 集成</strong>：Azure 原生身份认证</li>
+<li><strong>热缓存故障转移</strong>：备库一直在 apply WAL，缓存是热的（但只反映主库写入的页面，不是读工作集）</li>
+<li><strong>近零停机维护</strong>：HA 实例先修备库再故障转移，维护窗口压缩到故障转移那几秒</li>
+</ul>
+<h3>常见坑</h3>
+<ul>
+<li><strong>扩展需要两步</strong>：先加到 <code>azure.extensions</code> 允许列表，再 <code>CREATE EXTENSION</code>。很多人忘了第一步</li>
+<li><strong>Burstable tier 是生产陷阱</strong>：有 CPU 信用额度，耗尽后性能崩溃；还不支持 HA</li>
+<li><strong>Azure Monitor 日志有自己的账单</strong>：开查询日志的详细级别会产生单独的 Log Analytics 费用</li>
+<li><strong>网络模型选错很难改</strong>：VNet 集成 vs Private Link 是创建时决定</li>
+<li><strong>没有 SUPERUSER</strong>：<code>azure_pg_admin</code> 够大部分 DBA 日常用</li>
+<li><strong>没有 pg_tle 那样的自定义扩展机制</strong></li>
+</ul>
+<h2>适合/不适合</h2>
+<h3>✅ 适合</h3>
+<ul>
+<li>Azure 上的通用 OLTP，需要社区 PG 行为完全一致</li>
+<li>高连接数/短连接负载（内置 PgBouncer）</li>
+<li>Entra ID 为中心的组织</li>
+<li>需要可审计的同步持久性（"两个独立磁盘上的两个 PG 提交了，才算提交"）</li>
+</ul>
+<h3>❌ 不适合</h3>
+<ul>
+<li>延迟敏感的高 commit 率写入 + 跨 AZ（zone-redundant 的延迟税）</li>
+<li>需要不在允许列表里的扩展</li>
+<li>需要 Aurora 的克隆、AlloyDB 的列存引擎等特殊存储架构</li>
+<li>真正的 scale-to-zero</li>
+</ul>
+<h2>系列下一篇</h2>
+<p>Azure Cosmos DB for PostgreSQL（Citus 底层，和 Flexible Server 完全不一个定位）</p>
+</body>
+</html>

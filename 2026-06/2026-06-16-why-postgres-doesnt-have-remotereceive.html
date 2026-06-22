@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026-06-16-why-postgres-doesnt-have-remotereceive</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>title: Why Postgres Doesn't Have remote_receive - And What Happened When I Tried It
+source: https://www.robins.in/2026/06/why-postgres-doesnt-have-remotereceive.html
+author: Robins Tharakan
+published: June 15, 2026
+saved: 2026-06-16 14:31 +0800
+tags:
+- postgres
+- replication
+- benchmarking
+- database</p>
+<hr />
+<h1>Why Postgres Doesn't Have remote_receive - And What Happened When I Tried It</h1>
+<p>Source: <a href="https://www.robins.in/2026/06/why-postgres-doesnt-have-remotereceive.html">https://www.robins.in/2026/06/why-postgres-doesnt-have-remotereceive.html</a><br />
+Author: Robins Tharakan<br />
+Published: June 15, 2026<br />
+Saved: 2026-06-16 14:31 +0800</p>
+<p>In distributed database environments, balancing durability and performance is a constant tug-of-war. PostgreSQL’s <code>synchronous_commit</code> parameter sits at the heart of this, giving administrators a dial to choose exactly when a <code>COMMIT</code> returns success to the client.</p>
+<p>The idea of <code>remote_receive</code> was born from a simple question: does skipping the standby's disk write yield a measurable, real-world performance benefit? By waiting only for WAL bytes to reach the standby's memory, could we get a meaningful boost over <code>remote_write</code>? I set out to implement and benchmark this feature to find out.</p>
+<p>What followed was a journey through network latency, OS page caches, CPU scheduler thrashing, and benchmarking noise. Here is the breakdown of the implementation, the tests, the initial anomalies, and the final results.</p>
+<hr />
+<h2>1. The Feature: What is <code>remote_receive</code>?</h2>
+<p>Before this branch, PostgreSQL offered four primary synchronous commit modes:</p>
+<ul>
+<li><strong><code>off</code></strong>: Fully asynchronous. (Fastest, least safe)</li>
+<li><strong><code>local</code></strong>: Waits for local disk flush on the primary.</li>
+<li><strong><code>remote_write</code></strong>: Waits for the standby to write the WAL to its OS buffer cache (<code>pwrite</code>).</li>
+<li><strong><code>remote_apply</code></strong>: Waits for the standby to fully replay the WAL. (Slowest, most safe)</li>
+</ul>
+<p><code>remote_receive</code> sits directly between <code>local</code> and <code>remote_write</code>. In this mode, the primary guarantees that the WAL bytes have physically arrived at the standby's <code>walreceiver</code> process buffer. It does <em>not</em> wait for the standby to call <code>pwrite()</code>.</p>
+<p><strong>The Hypothesis:</strong> By completely bypassing the standby's disk I/O, <code>remote_receive</code> should deliver lower latency and higher throughput than <code>remote_write</code>, especially on replica hardware with slow disks.</p>
+<h3>Implementation Details</h3>
+<p>To build this, I had to modify both the standby and the primary:</p>
+<ol>
+<li><strong>Standby Status Update:</strong> I modified the 34-byte wire message that the standby sends to the primary, adding a new 8-byte <code>receivePtr</code> (creating a 42-byte message, backward compatible).</li>
+<li><strong>Early Replies:</strong> I modified <code>walreceiver.c</code> to send a reply message <em>immediately</em> upon receiving a WAL chunk in memory, before the <code>XLogWalRcvWrite()</code> call executes the <code>pg_pwrite</code>.</li>
+<li><strong>Primary Wait Logic:</strong> I updated <code>syncrep.c</code> and <code>walsender.c</code> to track the <code>SYNC_REP_WAIT_RECEIVE</code> wait queue, releasing waiting backends as soon as the standby's <code>receivePtr</code> advanced.</li>
+</ol>
+<hr />
+<h2>2. Scenario 1: The SSD Baseline (Fast Primary, Fast Replica)</h2>
+<p>To validate the code, I first set up a baseline test using two fast machines on a gigabit LAN.</p>
+<p><strong>The Servers:</strong></p>
+<ul>
+<li><strong>Primary:</strong> <code>lenovo</code> (Intel Core i7-12700 12C/20T, 48GB RAM, NVMe SSD)</li>
+<li><strong>Replica:</strong> <code>camry</code> (Intel Core i7-4770 4C/8T, 24GB RAM, SATA SSD)</li>
+</ul>
+<p>I ran pgbench (Scale 10, 4 clients) for 30 seconds across the different modes.</p>
+<p><strong>The Result:</strong></p>
+<ul>
+<li><code>remote_write</code>: 3,944 TPS (Median)</li>
+<li><code>remote_receive</code>: 3,946 TPS (Median)</li>
+</ul>
+<p>The performance was virtually identical (a 0.06% difference). Why didn't <code>remote_receive</code> pull ahead?</p>
+<p><strong>The Reality of <code>pwrite()</code>:</strong> On modern operating systems with free RAM, a standard <code>pwrite()</code> to a buffered file does not write to physical disk immediately. It copies the data into the OS page cache (essentially a memory copy taking mere microseconds), leaving the kernel to flush dirty pages asynchronously.</p>
+<p>With network round-trip time (RTT) on a gigabit LAN between 0.2ms and 1.0ms, the 5 microseconds saved by bypassing <code>pwrite()</code> is completely dwarfed by network latency. This makes <code>remote_write</code> and <code>remote_receive</code> perform nearly identically in typical conditions.</p>
+<p>This fundamental reality explains why core PostgreSQL developers historically questioned the return on investment (RoI) of a memory-only receive mode. Because a standard <code>pwrite()</code> to the OS page cache is already a RAM-speed operation (taking mere microseconds), <code>remote_write</code> is practically as fast as any network-receive-only mode under normal conditions, but with a major durability advantage: it survives a PostgreSQL process crash on the standby (as long as the OS remains running). Bypassing it would reduce durability without providing any real-world performance benefit in typical conditions. In pgsql-hackers discussions—such as the thread on <a href="https://www.postgresql.org/message-id/flat/CAEepm%3D2%3DjCZ35%2BmhRYE1yN%2BF97p5BYo%2BV%2BKx71Wu2xKaa3dQDg%40mail.gmail.com#234c830ffef92c855be4b7348d20ab54">Measuring Replay Lag</a> where distinct <code>write_lag</code> and <code>flush_lag</code> tracking was introduced—it is clear that the network round-trip time dominates the replication pipeline. To find a measurable benefit for a receive-only mode, I needed a replica where disk I/O was a severe enough bottleneck to cause page cache pressure and slow down the <code>pwrite()</code> call itself.</p>
+<hr />
+<h2>3. Scenario 2: The HDD Challenge (Asymmetric Hardware)</h2>
+<p>For the next test, I replaced the fast <code>camry</code> replica with a much weaker machine.</p>
+<p><strong>The Servers:</strong></p>
+<ul>
+<li><strong>Primary:</strong> <code>lenovo</code> (i7-12700, SSD)</li>
+<li><strong>Replica:</strong> <code>mac</code> (Intel Core i5-2520M 2C/4T, 16GB RAM, 5400RPM HDD)</li>
+</ul>
+<p>With a mechanical hard drive and a slow dual-core processor, I expected <code>remote_receive</code> to outpace <code>remote_write</code>. I ran three 30-second runs per mode, but the initial results were unexpected:</p>
+<p><strong>The First (Anomalous) Result:</strong></p>
+<ul>
+<li><code>remote_write</code>: 203.6 TPS (Median)</li>
+<li><code>remote_receive</code>: 179.0 TPS (Median)</li>
+</ul>
+<p><code>remote_write</code> was ~20 TPS faster than <code>remote_receive</code>. Tracing the <code>walreceiver</code> and <code>walsender</code> loops ruled out code bugs; instead, the bottleneck came down to four factors:</p>
+<ol>
+<li><strong>The OS Cache Illusion:</strong> Even on a slow HDD, <code>pwrite()</code> still writes to RAM. The mechanical disk's extreme latency only hits during <code>fsync</code> or when the page cache fills up, meaning the receive-only advantage remained small.</li>
+<li><strong>CPU/Scheduler Thrashing:</strong> By sending an "early reply" before writing to disk, <code>remote_receive</code> generates twice as many TCP reply packets (one for receive, one later for flush). On the replica's older dual-core CPU, processing this packet flood alongside WAL replay caused high context-switching overhead.</li>
+<li><strong>Flow Control:</strong> <code>remote_write</code> acted as a natural flow-control mechanism. By waiting to write before replying, it throttled the primary slightly, keeping the replica's CPU out of a thrashing state.</li>
+<li><strong>Statistical Noise:</strong> The <code>remote_write</code> runs ranged from 177 to 211 TPS (a 19% spread). A 3-run, 30-second test was simply too noisy to yield a reliable median.</li>
+</ol>
+<blockquote>
+<p><strong>Aside: The Raspberry Pi 4 Attempt</strong>
+Before settling on the Mac Mini HDD, I attempted to use a Raspberry Pi 4 (<code>pi4</code> — Cortex-A72 4C/4T, 4GB RAM, SD card / USB storage) as the slow replica. However, the Pi 4 was a poor fit for this benchmark. The main issue wasn't simply that the CPU maxed out, but that the low-power ARM CPU could not keep pace with the primary's faster rate of WAL generation. This lag cascaded into secondary issues—such as rapidly mounting replication lag, TCP buffer queues, and process starvation—which completely dominated the environment and masked any storage-level performance differences.</p>
+</blockquote>
+<hr />
+<h2>4. The Final Test: Eliminating the Noise</h2>
+<p>In the initial runs, the slow mechanical disk combined with standard kernel buffering created a massive source of noise: the sustained background I/O writes from a just-finished test were still flushing to disk when the next test began. Although an LSN cross-check was already in place (waiting for the replica's <code>replay_lsn</code> to catch up to the primary's current WAL LSN), this only verified database-level catch-up, not physical disk queue clearance. The residual write queue in the OS cache severely penalized the subsequent run, creating artificial variance. To isolate the actual replication performance and eliminate this noise, I overhauled the benchmarking methodology:</p>
+<ol>
+<li><strong>Interleaved Runs:</strong> I interleaved executions (Write, Receive, Write, Receive...) to average out temporal background OS tasks and thermal states.</li>
+<li><strong>Longer Runs and More Iterations:</strong> I ran 10 iterations per mode at 60 seconds per run (20 runs total).</li>
+<li><strong>Aggressive Cache Flushing:</strong> I ran <code>sync</code> on both the primary and replica between runs, followed by a 30-second sleep, to flush the OS page cache to physical disk platters and guarantee clean disk queues.</li>
+</ol>
+<p><strong>The Final Results:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Median TPS</th>
+<th>Mean TPS</th>
+<th>Median Latency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>remote_write</code></td>
+<td>201.58</td>
+<td>200.74</td>
+<td>20.663 ms</td>
+</tr>
+<tr>
+<td><code>remote_receive</code></td>
+<td>211.44</td>
+<td>206.85</td>
+<td>19.434 ms</td>
+</tr>
+</tbody>
+</table>
+<h3>The Results</h3>
+<p>With the noise eliminated and disk queues flushed, the true behavior emerged: <strong><code>remote_receive</code> outperformed <code>remote_write</code></strong> by <strong>~10 TPS (~4.9% gain)</strong> at the median and <strong>~6 TPS (~3.0% gain)</strong> at the mean. The small gap is expected: bypassing a RAM-buffered <code>pwrite()</code> on the replica yields microsecond-level gains, while network round-trip time remains the dominant factor.</p>
+<h2>Conclusion</h2>
+<p>The <code>remote_receive</code> implementation successfully introduces a granular durability option that guarantees WAL has crossed the network into the standby's memory before committing.</p>
+<p>This exercise highlighted a key rule of database benchmarking: <strong>the OS page cache masks physical disk latency until it fills up.</strong> To accurately benchmark high-variance storage, one must use interleaved runs, higher iteration counts, and rigorous OS-level cache flushes between tests. Otherwise, you are measuring cache behavior and statistical noise rather than raw database throughput.</p>
+<hr />
+<p><em><strong>A Note on the Development Process &amp; Resources:</strong> While I dabble in C and C++ from time to time, development at this level within PostgreSQL internals would not have been possible without AI assistance. Additionally, all resources for this project—including the Claude subscription, development machines, laptop, and time—were entirely personal and completely independent of my employer.</em></p>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026-06-14-antognini-operation-connect-by-with-filtering.summary</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>source: "https://antognini.ch/2008/06/operation-connect-by-with-filtering/"
+saved: "2026-06-14 15:47:45 CST"
+summary_of: "../../2026-06/2026-06-14-antognini-operation-connect-by-with-filtering.md"</p>
+<hr />
+<h1>Antognini：Operation CONNECT BY WITH FILTERING 摘要</h1>
+<h2>一句话结论</h2>
+<p>Oracle 的 <code>CONNECT BY WITH FILTERING</code> 执行层次查询时，先通过一个子操作找根节点，再按层级反复执行另一个子操作扩展子节点；执行计划里看似“神秘”的全表扫描通常是用于定位根节点，而不是每一层递归都做全表扫描。</p>
+<h2>文章主旨</h2>
+<p>文章解释 Oracle 层次查询 <code>CONNECT BY</code> 的执行计划如何阅读，特别是 <code>CONNECT BY WITH FILTERING</code> 操作下各个子节点的角色。Antognini 用经典 <code>EMP</code> 表的上下级关系示例说明：</p>
+<ul>
+<li><code>START WITH mgr IS NULL</code> 用来找根节点 <code>KING</code>；</li>
+<li><code>CONNECT BY PRIOR empno = mgr</code> 用来逐层查找下属；</li>
+<li>执行计划中的 <code>TABLE ACCESS FULL EMP</code> 对应根节点查找；</li>
+<li>后续层级扩展通过 <code>CONNECT BY PUMP</code>、<code>NESTED LOOPS</code>、索引 <code>EMP_MGR_I</code> 以及按 rowid 回表完成；</li>
+<li><code>Starts</code> 与 <code>A-Rows</code> 能帮助判断每个操作被执行的次数以及实际返回的行数。</li>
+</ul>
+<h2>执行计划机制</h2>
+<p>在 Oracle Database 11g 的示例计划中，<code>CONNECT BY WITH FILTERING</code> 有两个子操作：</p>
+<ol>
+<li>第一个子操作是 <code>TABLE ACCESS FULL EMP</code>：</li>
+<li>执行一次；</li>
+<li>应用过滤条件 <code>MGR IS NULL</code>；</li>
+<li>返回层次结构根节点 <code>KING</code>。</li>
+<li>第二个子操作是 <code>NESTED LOOPS</code>：</li>
+<li>按层级执行，本例共执行四次；</li>
+<li>通过 <code>CONNECT BY PUMP</code> 接收上一层节点；</li>
+<li>对上一层每个节点，用 <code>INDEX RANGE SCAN EMP_MGR_I</code> 查找 <code>mgr = prior empno</code> 的子节点；</li>
+<li>再通过 <code>TABLE ACCESS BY INDEX ROWID</code> 取出完整行。</li>
+</ol>
+<p>层级推进过程可以理解为：</p>
+<ul>
+<li>第 1 层：根节点 <code>KING</code>；</li>
+<li>第 2 层：<code>JONES</code>、<code>BLAKE</code>、<code>CLARK</code>；</li>
+<li>第 3 层：<code>SCOTT</code>、<code>FORD</code>、<code>ALLEN</code>、<code>WARD</code>、<code>MARTIN</code>、<code>TURNER</code>、<code>JAMES</code>、<code>MILLER</code>；</li>
+<li>第 4 层：<code>ADAMS</code>、<code>SMITH</code>。</li>
+</ul>
+<p>最终，<code>CONNECT BY WITH FILTERING</code> 应用访问谓词 <code>MGR = PRIOR EMPNO</code>，向调用方返回 14 行。</p>
+<h2>关键观察</h2>
+<ul>
+<li><code>CONNECT BY WITH FILTERING</code> 不是普通单层 join，而是一个专门处理层次查询的执行操作。</li>
+<li>它的第一个子操作负责确定根节点，因此即使后续层级访问使用索引，计划中仍可能出现 <code>TABLE ACCESS FULL</code>。</li>
+<li><code>CONNECT BY PUMP</code> 可以看作把当前层或上一层的行“泵入”下一轮层级扩展的机制。</li>
+<li><code>NESTED LOOPS</code> 的执行次数与层级深度相关；本例有四层，所以 <code>Starts = 4</code>。</li>
+<li>操作 4 的 <code>A-Rows</code> 与操作 5、6 的 <code>Starts</code> 匹配，说明对 <code>CONNECT BY PUMP</code> 输出的每一行都会触发一次索引查找与回表。</li>
+<li>在 Oracle 10g 的计划中，<code>CONNECT BY WITH FILTERING</code> 可能出现第三个子操作；示例中的第三个子操作 <code>TABLE ACCESS FULL EMP</code> 没有执行，因为 <code>Starts = 0</code>。</li>
+<li>这个第三个子操作只有在 <code>CONNECT BY</code> 使用临时空间时才会执行；一旦执行，性能可能显著下降。</li>
+<li>相关性能问题在 10.2.0.4 起修复，Antognini 指出它对应 bug 5065418。</li>
+</ul>
+<h2>对 CONNECT BY 优化的启发</h2>
+<ul>
+<li>阅读 <code>CONNECT BY</code> 执行计划时，不应只看到 <code>TABLE ACCESS FULL</code> 就判断整条层次查询低效；要先确认该全表扫描是否只是用于 <code>START WITH</code> 根节点定位。</li>
+<li>对递归扩展阶段，更关键的是 <code>CONNECT BY</code> 条件列是否有合适索引。例如本例中 <code>mgr</code> 上的 <code>EMP_MGR_I</code> 使每个父节点查找子节点时可以走 <code>INDEX RANGE SCAN</code>。</li>
+<li><code>Starts</code> 是诊断层次查询性能的重要指标：它揭示某个节点被反复调用了多少次，尤其能帮助识别递归层级扩展中的重复访问成本。</li>
+<li>如果在旧版本 Oracle 上看到 <code>CONNECT BY WITH FILTERING</code> 的第三个子操作实际执行，并伴随临时空间使用，应警惕 bug 或执行计划退化导致的性能问题。</li>
+<li>对深层或高扇出层次结构，成本可能来自“每个父节点一次索引探查/回表”的累积，而不一定来自根节点查找的全表扫描。</li>
+</ul>
+<h2>我的理解</h2>
+<p>这篇文章的价值在于把 <code>CONNECT BY WITH FILTERING</code> 拆成了两个阶段来看：先找根，再逐层扩展。执行计划中的缩进、<code>Starts</code>、<code>A-Rows</code> 和谓词信息合在一起，才能还原真实执行流程。所谓“神秘全表扫描”并不神秘，它对应 <code>START WITH mgr IS NULL</code>，只是优化器为了找根节点选择了全表扫描。真正需要关注的是递归扩展阶段是否可索引化、层级深度和节点数量会导致多少次循环访问，以及旧版本中是否触发了临时空间相关的第三子操作。</p>
+</body>
+</html>

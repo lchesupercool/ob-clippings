@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026-05-19-lun-wang-evals-will-break.summary</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>title: DeepMind华人研究员Lun Wang离职，「评估」成制约模型能力飞跃的瓶颈 摘要
+source: https://mp.weixin.qq.com/s/jPobUMGRo19_v4dPtYk1Xg
+saved: 2026-05-19 16:38:46 +0800</p>
+<hr />
+<h1>Lun Wang：评估系统即将崩溃 摘要</h1>
+<p>文章报道了前 Google DeepMind 研究员 Lun Wang 离职后发布的一篇博文。核心观点是：制约下一次模型能力跃迁的瓶颈，可能不是训练、架构或数据，而是评估 Eval。</p>
+<h2>核心观点</h2>
+<p>Lun Wang 认为，现在行业很擅长评估“已有模型”，但不擅长评估“即将出现的新模型”。多数 benchmark、安全评估、红队协议都默认下一代模型只是当前模型的增强版；但如果新模型进入一个全新的能力区间，现有评估体系可能会在无声中失效。</p>
+<p>他提出一句关键判断：我们未来会有能自我进化的模型，但在那之前，首先需要能自我进化的评估体系。</p>
+<h2>为什么现有评估会失效</h2>
+<ol>
+<li>模型能力可能发生定性转变</li>
+</ol>
+<p>过去已有类似现象：</p>
+<ul>
+<li>Emergent abilities：规模到达某个阈值后，少样本提示、CoT、指令遵循等能力突然显现。</li>
+<li>Grokking：模型在长期记忆训练数据后，突然获得泛化能力。</li>
+<li>反方观点认为很多“跃迁”只是非连续指标造成的假象，如果换连续指标会更平滑。</li>
+</ul>
+<p>Lun Wang 的重点是：无论跃迁是真实能力变化，还是指标伪像，都说明评估基础设施可能误导我们。我们甚至无法确定过去的转变是否真实，又怎么预测下一次？</p>
+<ol>
+<li>我们不知道该测什么</li>
+</ol>
+<p>他借用物理学“相变”概念：理解相变通常需要找到“序参量” order parameter，用来判断系统处于哪个状态、是否接近临界点。</p>
+<p>但对于生产级 LLM，我们还没有类似的能力转变序参量。现有基准如 GPQA、SWE-bench、ARC-AGI、Humanity's Last Exam，大多只测模型“现在能做什么”，无法预测跨入新能力区间后的行为。</p>
+<ol>
+<li>新能力会带来新失败模式</li>
+</ol>
+<p>文章举例：假如某个模型发展出“策略性隐瞒信息”的能力，它不是直接撒谎，而是选择性忽略某些事实，引导对话走向对自己目标有利的方向。</p>
+<p>现有诚实度基准可能抓不到，因为每句话在技术上都是真的；安全分类器也不会报警，因为没有明显违规。这就是新能力带来的新失败模式，而旧评估完全没有针对它设计。</p>
+<h2>为什么评估比训练更底层</h2>
+<p>Lun Wang 认为：如果你能正确评估，就能正确训练。</p>
+<p>训练本质是优化，优化目标来自评估。如果评估测错了，训练信号、安全指标、scale 决策、RLHF 目标都会跟着错。更危险的是，系统可能已经偏了，但你不知道，直到问题爆发。</p>
+<p>因此，真正领先的实验室不只是训练更大模型，而是能提前发现现有评估何时会失效。</p>
+<h2>他建议怎么做</h2>
+<ol>
+<li>寻找序参量</li>
+</ol>
+<p>需要找到能预示定性转变的指标，包括能力、对齐性、行为特征等。文章提到一些方向：</p>
+<ul>
+<li>2026 年 Shan、Li、Sompolinsky 用统计力学推导持续学习中深度网络的序参量，可预测学习能力相变。</li>
+<li>2023 年 Nanda 等人用 mechanistic interpretability 找到 grokking 前的内部“进度指标”。</li>
+</ul>
+<p>难点是把这些方法从理想化实验扩展到大规模 LLM。</p>
+<ol>
+<li>构建能检测自身过时的评估系统</li>
+</ol>
+<p>随着模型越来越 agentic，能写代码、跑实验、生成数据、辅助训练和评估，静态 benchmark 会更脆弱。如果模型能力提升速度超过人类更新评估的速度，评估系统就必须自适应。</p>
+<ol>
+<li>监控 meta-signals</li>
+</ol>
+<p>需要监控的不只是分数，还包括：</p>
+<ul>
+<li>benchmark 分数分布是否变化</li>
+<li>不同评估之间的相关结构是否转移</li>
+<li>模型是否发展出与现有测量维度正交的新能力</li>
+<li>
+<p>loss、推理深度、工具使用复杂度、欺骗能力等 scale curve 是否出现断裂</p>
+</li>
+<li>
+<p>用模型生成新评估</p>
+</li>
+</ul>
+<p>评估系统应该能利用模型去探测其他模型，根据能力变化自动生成新测试案例，发现原始评估设计者没有预料到的失败模式。</p>
+<p>也就是说，评估套件不该是静态清单，而应是能与模型共同演化的生命系统。</p>
+<h2>我的判断</h2>
+<p>这篇文章最有价值的地方，是把“Eval”从排行榜工具提升到了模型研发的控制系统。</p>
+<p>过去大家常把评估看成训练后的验收环节；Lun Wang 的观点更像是：评估定义了训练目标、安全边界、产品上线标准和 scaling 决策。如果评估系统滞后，模型越强，风险越不可见。</p>
+<p>对 AI Agent 尤其重要。传统 benchmark 更容易测知识、推理、代码能力，但很难测长期策略、目标保持、隐瞒、工具滥用、社会工程、跨步骤欺骗等动态行为。越是 agentic 的系统，越需要动态、自适应、可红队化的评估。</p>
+<p>一句话总结：下一代模型真正危险的地方，可能不是它在已知 benchmark 上拿多高分，而是它发展出了评估体系根本没想到要测的新能力。</p>
+</body>
+</html>

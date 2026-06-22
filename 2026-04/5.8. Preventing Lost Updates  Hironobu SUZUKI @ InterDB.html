@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5.8. Preventing Lost Updates  Hironobu SUZUKI @ InterDB</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #333; }
+pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
+code { font-family: SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+img { max-width: 100%; }
+a { color: #0366d6; }
+</style>
+</head>
+<body>
+<hr />
+<p>title: "5.8. Preventing Lost Updates :: Hironobu SUZUKI @ InterDB"
+source: "https://www.interdb.jp/pg/pgsql05/08.html"
+author:
+published:
+created: 2026-04-23
+description:
+tags:
+  - "clippings"</p>
+<hr />
+<h2>5.8. Preventing Lost Updates</h2>
+<p>A <strong>Lost Update</strong>, also known as a <strong>ww-conflict</strong>, is an anomaly that occurs when concurrent transactions update the same rows, and it must be prevented in both the REPEATABLE READ and SERIALIZABLE levels. (Note that the READ COMMITTED level does not need to prevent Lost Updates.) This section describes how PostgreSQL prevents Lost Updates and shows examples.</p>
+<h3>5.8.1. Behavior of Concurrent UPDATE Commands</h3>
+<p>When an UPDATE command is executed, the function ExecUpdate is internally invoked. The pseudocode of the ExecUpdate is shown below:</p>
+<pre><code class="language-ruby">(1)   FOR each row that will be updated by this UPDATE command
+(2)        WHILE true
+
+                /*
+                 * The First Block
+                 */
+(3)             IF the target row is 'being updated' THEN
+(4)                 WAIT for the termination of the transaction that updated the target row
+
+(5)                  IF (the status of the terminated transaction is COMMITTED)
+                      AND (the isolation level of this transaction is REPEATABLE READ or SERIALIZABLE) THEN
+(6)                      ABORT this transaction  /* First-Updater-Win */
+                     ELSE
+(7)                       GOTO step (2)
+                     END IF
+
+                /*
+                 * The Second Block
+                 */
+(8)             ELSE IF the target row has been updated by another concurrent transaction THEN
+(9)                  IF (the isolation level of this transaction is READ COMMITTED THEN
+UPDATE
+                     ELSE
+(11)                      ABORT this transaction  /* First-Updater-Win */
+                     END IF
+
+                /*
+                 * The Third Block
+                 */
+                ELSE  /* The target row is not yet modified               */
+                      /* or has been updated by a terminated transaction. */
+UPDATE
+                END IF
+           END WHILE
+      END FOR
+</code></pre>
+<ol>
+<li>Get each row that will be updated by this UPDATE command.</li>
+<li>Repeat the following process until the target row has been updated (or this transaction is aborted).</li>
+<li>If the target row <em>is being updated</em>, go to step (3); otherwise, go to step (8).</li>
+<li>Wait for the termination of the transaction that updated the target row, because PostgreSQL uses <em>first-updater-win</em> scheme in SI.</li>
+<li>If the status of the transaction that updated the target row is COMMITTED and the isolation level of this transaction is REPEATABLE READ (or SERIALIZABLE), go to step (6); otherwise, go to step (7).</li>
+<li>Abort this transaction to prevent Lost Updates.</li>
+<li>Go to step (2) and attempt to update the target row in the next round.</li>
+<li>If the target row has been updated by another concurrent transaction, go to step (9); otherwise, go to step (12).</li>
+<li>If the isolation level of this transaction is READ COMMITTED, go to step (10); otherwise, go to step (11).</li>
+<li>UPDATE the target row, and go to step (1).</li>
+<li>Abort this transaction to prevent Lost Updates.</li>
+<li>UPDATE the target row, and go to step (1), because the target row is not yet modified or has been updated by a terminated transaction, i.e. there is ww-conflict.</li>
+</ol>
+<p>This function performs update operations for each of the target rows. It has a while loop to update each row, and the inside of the while loop branches to three blocks according to the conditions shown in Figure 5.11.</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql05/fig-5-11.png" /></p>
+<p>Figure 5.11. Three internal blocks in ExecUpdate.</p>
+<ul>
+<li>[1] The target row is being updated (Figure 5.11[1])<br />
+    ‘Being updated’ means that the row is being updated by another concurrent transaction and its transaction has not terminated.<br />
+    In this case, the current transaction must wait for termination of the transaction that updated the target row because PostgreSQL’s SI uses the <strong>first-updater-win</strong> scheme.<br />
+    For example, assume that transactions Tx_A and Tx_B run concurrently, and Tx_B attempts to update a row; however, Tx_A has updated it and is still in progress. In this case, Tx_B waits for the termination of Tx_A.<br />
+    After the transaction that updated the target row commits, the update operation of the current transaction proceeds.<br />
+    If the current transaction is in the READ COMMITTED level, the target row will be updated; otherwise (REPEATABLE READ or SERIALIZABLE), the current transaction is aborted immediately to prevent lost updates.</li>
+<li>[2] The target row has been updated by the concurrent transaction (Figure 5.11[2])<br />
+    The current transaction attempts to update the target tuple; however, the other concurrent transaction has updated the target row and has already been committed.<br />
+    In this case, if the current transaction is in the READ COMMITTED level, the target row will be updated; otherwise, the current transaction is aborted immediately to prevent lost updates.</li>
+<li>[3] There is no conflict (Figure 5.11[3])<br />
+    When there is no conflict, the current transaction can update the target row.</li>
+</ul>
+<p>First-updater-win / First-commiter-win</p>
+<p>As mentioned in this section, PostgreSQL’s concurrency control based on SI uses the <em>first-updater-win</em> scheme to avoid lost update anomalies. In contrast, as explained in the next section, PostgreSQL’s SSI uses the <em>first-committer-win</em> scheme to avoid serialization anomalies.</p>
+<h3>5.8.2. Examples</h3>
+<p>Three examples are shown in the following. The first and second examples show behaviours when the target row is being updated, and the third example shows the behaviour when the target row has been updated.</p>
+<h5>5.8.2.1. Example 1</h5>
+<p>Transactions Tx_A and Tx_B update the same row in the same table, and their isolation level is READ COMMITTED.</p>
+<pre><code class="language-sql">testdb=# -- Tx_A
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Hyde';
+UPDATE 1
+
+testdb=# COMMIT;
+COMMIT
+</code></pre>
+<pre><code class="language-sql">testdb=#
+testdb=# -- Tx_B
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Utterson';
+
+(this transaction is being blocked)
+
+UPDATE 1
+</code></pre>
+<p>Tx_B is executed as follows.</p>
+<ol>
+<li>After executing the UPDATE command, Tx_B should wait for the termination of Tx_A, because the target tuple is being updated by Tx_A (Step (4) in ExecUpdate).</li>
+<li>After Tx_A is committed, Tx_B attempts to update the target row (Step (7) in ExecUpdate).</li>
+<li>In the second round of ExecUpdate, the target row is updated again by Tx_B (Steps (2),(8),(9),(10) in ExecUpdate).</li>
+</ol>
+<h5>5.8.2.2. Example 2</h5>
+<p>Tx_A and Tx_B update the same row in the same table, and their isolation levels are READ COMMITTED and REPEATABLE READ, respectively.</p>
+<pre><code class="language-sql">testdb=# -- Tx_A
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Hyde';
+UPDATE 1
+
+testdb=# COMMIT;
+COMMIT
+</code></pre>
+<pre><code class="language-sql">testdb=#
+testdb=# -- Tx_B
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL REPEATABLE READ;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Utterson';
+
+(this transaction is being blocked)
+
+ERROR:couldn't serialize access due to concurrent update
+</code></pre>
+<p>The behaviour of Tx_B is described as follows.</p>
+<ol>
+<li>After executing the UPDATE command, Tx_B should wait for the termination of Tx_A (Step (4) in ExecUpdate).</li>
+<li>After Tx_A is committed, Tx_B is aborted to resolve conflict because the target row has been updated and the isolation level of this transaction is REPEATABLE READ (Steps (5) and (6) in ExecUpdate).</li>
+</ol>
+<h5>5.8.2.3. Example 3</h5>
+<p>Tx_B (REPEATABLE READ) attempts to update the target row that has been updated by the committed Tx_A. In this case, Tx_B is aborted (Steps (2),(8),(9), and (11) in ExecUpdate).</p>
+<pre><code class="language-sql">testdb=# -- Tx_A
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Hyde';
+UPDATE 1
+
+testdb=# COMMIT;
+COMMIT
+</code></pre>
+<pre><code class="language-sql">testdb=#
+testdb=#
+testdb=# -- Tx_B
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL REPEATABLE READ;
+START TRANSACTION
+testdb=# SELECT * FROM tbl;
+  name
+--------
+ Jekyll
+row
+testdb=# UPDATE tbl SET name = 'Utterson';
+ERROR:couldn't serialize access due to concurrent update
+</code></pre>
+</body>
+</html>

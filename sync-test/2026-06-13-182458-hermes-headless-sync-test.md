@@ -1,5 +1,3 @@
----
----
 
 # Hermes Headless Sync Test
 
