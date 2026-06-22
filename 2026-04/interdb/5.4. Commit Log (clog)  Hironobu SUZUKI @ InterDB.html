@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>5.4. Commit Log (clog)  Hironobu SUZUKI @ InterDB</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>5.4. Commit Log (clog)</h1>
+<p>PostgreSQL holds the statuses of transactions in the <strong>Commit Log</strong>. The Commit Log, often called the <strong>clog</strong>, is ==allocated to shared memory and is used throughout transaction processing.==</p>
+<p>This section describes the the status of transactions in PostgreSQL, how the clog operates, and maintenance of the clog.</p>
+<h2>5.4.1 Transaction Status</h2>
+<p>PostgreSQL defines four transaction states: IN_PROGRESS, COMMITTED, ABORTED, and SUB_COMMITTED.</p>
+<p>The first three statuses are self-explanatory. For example, when a transaction is in progress, its status is IN_PROGRESS.</p>
+<p>SUB_COMMITTED is for sub-transactions, and its description is omitted in this document.</p>
+<h2>5.4.2. How Clog Performs</h2>
+<p>The clog comprises one or more ==8 KB pages in shared memory==. It logically forms an array, where the ==indices of the array correspond to the respective transaction ids==, and each item in the array holds the status of the corresponding transaction id. Figure 5.7 shows the clog and how it operates.</p>
+<p><img alt="T1:txid 200 commits; the status of txid 200 is changed from IN_PROGRESS to COMMITTED.
+T2:txid 201 aborts;the status of txid 201 is changed from IN_PROGRESS to ABORTED." src="https://www.interdb.jp/pg/pgsql05/fig-5-07.png" /></p>
+<p>Figure 5.7. How the clog operates. T1: txid 200 commits; the status of txid 200 is changed from IN_PROGRESS to COMMITTED. T2: txid 201 aborts;the status of txid 201 is changed from IN_PROGRESS to ABORTED.</p>
+<p>When the current txid advances and the clog can no longer store it, a new page is appended.</p>
+<p>When the status of a transaction is needed, internal functions are invoked. Those functions read the clog and return the status of the requested transaction. (See also “Hint Bits” in</p>
+<pre><code class="language-nginx">Section 5.7.1.1
+</code></pre>
+<p>.)</p>
+<h2>5.4.3. Maintenance of the Clog</h2>
+<p>When PostgreSQL shuts down or whenever the checkpoint process runs, the data of the clog are written into files stored in the <em>pg_xact</em> subdirectory. (Note that pg_xact was called <em>pg_clog</em> in versions 9.6 or earlier.) ==These files are named ‘0000’, ‘0001’,== and so on.</p>
+<p>==The maximum file size is 256 KB==. For example, if the clog uses eight pages (the first page to the eighth page, the total size is 64 KB), its data are written into ‘0000’ (64 KB). If the clog uses 37 pages (296 KB), its data are written into ‘0000’ and ‘0001’, which are 256 KB and 40 KB in size, respectively.</p>
+<p>When PostgreSQL starts up, the data stored in the pg_xact files are loaded to initialize the clog.</p>
+<p>The size of the clog continuously increases because a new page is appended whenever the clog is filled up. However, not all data in the clog are necessary. Vacuum processing, described in</p>
+<pre><code>Chapter 6
+</code></pre>
+<p>, regularly removes such old data (both the clog pages and files).</p>
+<p>Details about removing the clog data are described in</p>
+<pre><code>Section 6.4
+</code></pre>
+<p>.</p>
+<p>[[LLM Wiki/raw/clippings/中译-5.4. Commit Log (clog)  Hironobu SUZUKI @ InterDB.md|中译]]</p></body>
+</html>

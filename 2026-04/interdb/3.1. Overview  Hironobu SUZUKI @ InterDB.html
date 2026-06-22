@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>3.1. Overview  Hironobu SUZUKI @ InterDB</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>3.1. Overview</h1>
+<p>In PostgreSQL, although the parallel query implemented in version 9.6 uses multiple background worker processes, a backend process basically handles all queries issued by the connected client. This backend consists of five subsystems:</p>
+<ol>
+<li>Parser
+    The parser generates a parse tree from an SQL statement in plain text.</li>
+<li>Analyzer/Analyser
+    The analyzer/analyser carries out a semantic analysis of a parse tree and generates a query tree.</li>
+<li>Rewriter
+    The rewriter transforms a query tree using the rules stored in the <code>rule system</code> if such rules exist.</li>
+<li>Planner
+    The planner generates the plan tree that can most effectively be executed from the query tree.</li>
+<li>Executor
+    The executor executes the query by accessing the tables and indexes in the order that was created by the plan tree.
+<img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-01.png" /></li>
+</ol>
+<p>Figure 3.1. Query Processing.</p>
+<p>In this section, an overview of these subsystems is provided. Due to the fact that the planner and the executor are very complicated, a detailed explanation for these functions will be provided in the following sections.</p>
+<p>PostgreSQL’s query processing is described in the <code>official document</code> in detail.</p>
+<h2>3.1.1. Parser</h2>
+<p>The parser generates a parse tree that can be read by subsequent subsystems from an SQL statement in plain text. Here is a specific example, without a detailed description.</p>
+<p>Let us consider the query shown below.</p>
+<pre><code class="language-sql">testdb=# SELECT id, data FROM tbl_a WHERE id &lt; 300 ORDER BY data;
+</code></pre>
+<p>A parse tree is a tree whose root node is the SelectStmt structure defined in <code>parsenodes.h</code>. Figure 3.2(b) illustrates the parse tree of the query shown in Figure 3.2(a).</p>
+<pre><code class="language-c">typedef struct SelectStmt
+{
+    NodeTag        type;
+
+    /*
+     * These fields are used only in &quot;leaf&quot; SelectStmts.
+     */
+    List       *distinctClause; /* NULL, list of DISTINCT ON exprs, or
+                                 * lcons(NIL,NIL) for all (SELECT DISTINCT) */
+    IntoClause *intoClause;        /* target for SELECT INTO */
+    List       *targetList;        /* the target list (of ResTarget) */
+    List       *fromClause;        /* the FROM clause */
+    Node       *whereClause;    /* WHERE qualification */
+    List       *groupClause;    /* GROUP BY clauses */
+    bool        groupDistinct;    /* Is this GROUP BY DISTINCT? */
+    Node       *havingClause;    /* HAVING conditional-expression */
+    List       *windowClause;    /* WINDOW window_name AS (...), ... */
+
+    /*
+     * In a &quot;leaf&quot; node representing a VALUES list, the above fields are all
+     * null, and instead this field is set.  Note that the elements of the
+     * sublists are just expressions, without ResTarget decoration. Also note
+     * that a list element can be DEFAULT (represented as a SetToDefault
+     * node), regardless of the context of the VALUES list. It's up to parse
+     * analysis to reject that where not valid.
+     */
+    List       *valuesLists;    /* untransformed list of expression lists */
+
+    /*
+     * These fields are used in both &quot;leaf&quot; SelectStmts and upper-level
+     * SelectStmts.
+     */
+    List       *sortClause;        /* sort clause (a list of SortBy's) */
+    Node       *limitOffset;    /* # of result tuples to skip */
+    Node       *limitCount;        /* # of result tuples to return */
+    LimitOption limitOption;    /* limit type */
+    List       *lockingClause;    /* FOR UPDATE (list of LockingClause's) */
+    WithClause *withClause;        /* WITH clause */
+
+    /*
+     * These fields are used only in upper-level SelectStmts.
+     */
+    SetOperation op;            /* type of set op */
+    bool        all;            /* ALL specified? */
+    struct SelectStmt *larg;    /* left child */
+    struct SelectStmt *rarg;    /* right child */
+    /* Eventually add fields for CORRESPONDING spec here */
+} SelectStmt;
+</code></pre>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-02.png" /></p>
+<p>Figure 3.2. An example of a parse tree.</p>
+<p>The elements of the SELECT query and the corresponding elements of the parse tree are numbered the same. For example, (1) is an item of the first target list, and it is the column ‘id’ of the table; (4) is a WHERE clause; and so on.</p>
+<p>The parser only checks the syntax of an input when generating a parse tree. Therefore, it only returns an error if there is a syntax error in the query.</p>
+<p>The parser does not check the semantics of an input query. For example, even if the query contains a table name that does not exist, the parser does not return an error. Semantic checks are done by the analyzer/analyser.</p>
+<h2>3.1.2. Analyzer/Analyser</h2>
+<p>The analyzer/analyser runs a semantic analysis of a parse tree generated by the parser and generates a query tree.</p>
+<p>The root of a query tree is the Query structure defined in <code>parsenodes.h</code>. This structure contains metadata of its corresponding query, such as the type of the command (SELECT, INSERT, or others), and several leaves. Each leaf forms a list or a tree and holds data for the individual particular clause.</p>
+<pre><code class="language-c">/*
+ * Query -
+ *      Parse analysis turns all statements into a Query tree
+ *      for further processing by the rewriter and planner.
+ *
+ *      Utility statements (i.e. non-optimizable statements) have the
+ *      utilityStmt field set, and the rest of the Query is mostly dummy.
+ *
+ *      Planning converts a Query tree into a Plan tree headed by a PlannedStmt
+ *      node --- the Query structure is not used by the executor.
+ *
+ *      All the fields ignored for the query jumbling are not semantically
+ *      significant (such as alias names), as is ignored anything that can
+ *      be deduced from child nodes (else we'd just be double-hashing that
+ *      piece of information).
+ */
+typedef struct Query
+{
+    NodeTag        type;
+
+    CmdType        commandType;    /* select|insert|update|delete|merge|utility */
+
+    /* where did I come from? */
+    QuerySource querySource pg_node_attr(query_jumble_ignore);
+
+    /*
+     * query identifier (can be set by plugins); ignored for equal, as it
+     * might not be set; also not stored.  This is the result of the query
+     * jumble, hence ignored.
+     *
+     * We store this as a signed value as this is the form it's displayed to
+     * users in places such as EXPLAIN and pg_stat_statements.  Primarily this
+     * is done due to lack of an SQL type to represent the full range of
+     * uint64.
+     */
+    int64        queryId pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(0));
+
+    /* do I set the command result tag? */
+    bool        canSetTag pg_node_attr(query_jumble_ignore);
+
+    Node       *utilityStmt;    /* non-null if commandType == CMD_UTILITY */
+
+    /*
+     * rtable index of target relation for INSERT/UPDATE/DELETE/MERGE; 0 for
+     * SELECT.  This is ignored in the query jumble as unrelated to the
+     * compilation of the query ID.
+     */
+    int            resultRelation pg_node_attr(query_jumble_ignore);
+
+    /* has aggregates in tlist or havingQual */
+    bool        hasAggs pg_node_attr(query_jumble_ignore);
+    /* has window functions in tlist */
+    bool        hasWindowFuncs pg_node_attr(query_jumble_ignore);
+    /* has set-returning functions in tlist */
+    bool        hasTargetSRFs pg_node_attr(query_jumble_ignore);
+    /* has subquery SubLink */
+    bool        hasSubLinks pg_node_attr(query_jumble_ignore);
+    /* distinctClause is from DISTINCT ON */
+    bool        hasDistinctOn pg_node_attr(query_jumble_ignore);
+    /* WITH RECURSIVE was specified */
+    bool        hasRecursive pg_node_attr(query_jumble_ignore);
+    /* has INSERT/UPDATE/DELETE/MERGE in WITH */
+    bool        hasModifyingCTE pg_node_attr(query_jumble_ignore);
+    /* FOR [KEY] UPDATE/SHARE was specified */
+    bool        hasForUpdate pg_node_attr(query_jumble_ignore);
+    /* rewriter has applied some RLS policy */
+    bool        hasRowSecurity pg_node_attr(query_jumble_ignore);
+    /* parser has added an RTE_GROUP RTE */
+    bool        hasGroupRTE pg_node_attr(query_jumble_ignore);
+    /* is a RETURN statement */
+    bool        isReturn pg_node_attr(query_jumble_ignore);
+
+    List       *cteList;        /* WITH list (of CommonTableExpr's) */
+
+    List       *rtable;            /* list of range table entries */
+
+    /*
+     * list of RTEPermissionInfo nodes for the rtable entries having
+     * perminfoindex &gt; 0
+     */
+    List       *rteperminfos pg_node_attr(query_jumble_ignore);
+    FromExpr   *jointree;        /* table join tree (FROM and WHERE clauses);
+                                 * also USING clause for MERGE */
+
+    List       *mergeActionList;    /* list of actions for MERGE (only) */
+
+    /*
+     * rtable index of target relation for MERGE to pull data. Initially, this
+     * is the same as resultRelation, but after query rewriting, if the target
+     * relation is a trigger-updatable view, this is the index of the expanded
+     * view subquery, whereas resultRelation is the index of the target view.
+     */
+    int            mergeTargetRelation pg_node_attr(query_jumble_ignore);
+
+    /* join condition between source and target for MERGE */
+    Node       *mergeJoinCondition;
+
+    List       *targetList;        /* target list (of TargetEntry) */
+
+    /* OVERRIDING clause */
+    OverridingKind override pg_node_attr(query_jumble_ignore);
+
+    OnConflictExpr *onConflict; /* ON CONFLICT DO [NOTHING | UPDATE] */
+
+    /*
+     * The following three fields describe the contents of the RETURNING list
+     * for INSERT/UPDATE/DELETE/MERGE. returningOldAlias and returningNewAlias
+     * are the alias names for OLD and NEW, which may be user-supplied values,
+     * the defaults &quot;old&quot; and &quot;new&quot;, or NULL (if the default &quot;old&quot;/&quot;new&quot; is
+     * already in use as the alias for some other relation).
+     */
+    char       *returningOldAlias pg_node_attr(query_jumble_ignore);
+    char       *returningNewAlias pg_node_attr(query_jumble_ignore);
+    List       *returningList;    /* return-values list (of TargetEntry) */
+
+    List       *groupClause;    /* a list of SortGroupClause's */
+    bool        groupDistinct;    /* is the group by clause distinct? */
+
+    List       *groupingSets;    /* a list of GroupingSet's if present */
+
+    Node       *havingQual;        /* qualifications applied to groups */
+
+    List       *windowClause;    /* a list of WindowClause's */
+
+    List       *distinctClause; /* a list of SortGroupClause's */
+
+    List       *sortClause;        /* a list of SortGroupClause's */
+
+    Node       *limitOffset;    /* # of result tuples to skip (int8 expr) */
+    Node       *limitCount;        /* # of result tuples to return (int8 expr) */
+    LimitOption limitOption;    /* limit type */
+
+    List       *rowMarks;        /* a list of RowMarkClause's */
+
+    Node       *setOperations;    /* set-operation tree if this is top level of
+                                 * a UNION/INTERSECT/EXCEPT query */
+
+    /*
+     * A list of pg_constraint OIDs that the query depends on to be
+     * semantically valid
+     */
+    List       *constraintDeps pg_node_attr(query_jumble_ignore);
+
+    /* a list of WithCheckOption's (added during rewrite) */
+    List       *withCheckOptions pg_node_attr(query_jumble_ignore);
+
+    /*
+     * The following two fields identify the portion of the source text string
+     * containing this query.  They are typically only populated in top-level
+     * Queries, not in sub-queries.  When not set, they might both be zero, or
+     * both be -1 meaning &quot;unknown&quot;.
+     */
+    /* start location, or -1 if unknown */
+    ParseLoc    stmt_location;
+    /* length in bytes; 0 means &quot;rest of string&quot; */
+    ParseLoc    stmt_len pg_node_attr(query_jumble_ignore);
+} Query;
+</code></pre>
+<p>Figure 3.3 illustrates the query tree of the query shown in Figure 3.2(a) in the previous subsection.</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-03.png" /></p>
+<p>Figure 3.3. An example of a query tree.</p>
+<p>The above query tree is briefly described as follows:</p>
+<ul>
+<li>The targetlist is a list of columns that are the result of this query. In this example, the list is composed of two columns: ‘id’ and ‘data’. If the input query tree uses ‘ <strong>∗ $∗$ $\ast$</strong> ’ (asterisk), the analyzer/analyser will explicitly replace it with all of the columns.</li>
+<li>The range table is a list of relations that are used in this query. In this example, the list holds the information of the table ’tbl_a’, such as the <em>OID</em> of the table and the name of the table.</li>
+<li>The join tree stores the FROM clause and the WHERE clauses.</li>
+<li>The sort clause is a list of SortGroupClause.</li>
+</ul>
+<p>The details of the query tree are described in the <code>official document</code>.</p>
+<h2>3.1.3. Rewriter</h2>
+<p>The rewriter is the system that realizes the <code>rule system</code>. It transforms a query tree according to the rules stored in the <code>pg_rules</code> system catalog, if necessary. The rule system is an interesting system in itself, but the descriptions of the rule system and the rewriter have been omitted to prevent this chapter from becoming too long.</p>
+<p>View <code>Views</code> in PostgreSQL are implemented by using the rule system. When a view is defined by the <code>CREATE VIEW</code> command, the corresponding rule is automatically generated and stored in the catalog.</p>
+<p>Assume that the following view is already defined and the corresponding rule is stored in the <code>pg_rules</code> system catalog:</p>
+<pre><code class="language-sql">sampledb=# CREATE VIEW employees_list
+sampledb-#      AS SELECT e.id, e.name, d.name AS department
+sampledb-#            FROM employees AS e, departments AS d WHERE e.department_id = d.id;
+</code></pre>
+<p>When a query that contains a view shown below is issued, the parser creates the parse tree as shown in Figure 3.4(a).</p>
+<pre><code class="language-sql">sampledb=# SELECT * FROM employees_list;
+</code></pre>
+<p>At this stage, the rewriter processes the range table node to a parse tree of the subquery, which is the corresponding view, stored in <em>pg_rules</em>.</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-04.png" /></p>
+<p>Figure 3.4. An example of the rewriter stage.</p>
+<p>Since PostgreSQL realizes views using such a mechanism, views could not be updated until version 9.2. However, views can be updated from version 9.3 onwards; nonetheless, there are many limitations in updating the view. These details are described in the <code>official document</code>.</p>
+<h2>3.1.4. Planner and Executor</h2>
+<p>The planner receives a query tree from the rewriter and generates a (query) plan tree that can be processed by the executor most effectively.</p>
+<p>The planner in PostgreSQL is based on pure cost-based optimization. It does not support rule-based optimization or hints. This planner is the most complex subsystem in PostgreSQL. Therefore, an overview of the planner will be provided in the subsequent sections of this chapter.</p>
+<p>PostgreSQL does not support planner hints in SQL, and it will not be supported forever. To use hints in queries, consider installing the <code>pg_hint_plan</code> extension.</p>
+<p>As in other RDBMS, the <code>EXPLAIN</code> command in PostgreSQL displays the plan tree itself. A specific example is shown below:</p>
+<pre><code class="language-sql">testdb=# EXPLAIN SELECT * FROM tbl_a WHERE id &lt; 300 ORDER BY data;
+                          QUERY PLAN
+---------------------------------------------------------------
+ Sort  (cost=182.34..183.09 rows=300 width=8)
+   Sort Key: data
+   -&gt;  Seq Scan on tbl_a  (cost=0.00..170.00 rows=300 width=8)
+         Filter: (id &lt; 300)
+rows
+</code></pre>
+<p>This result shows the plan tree shown in Figure 3.5.</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-05.png" /></p>
+<p>Figure 3.5. A simple plan tree and the relationship between the plan tree and the result of the EXPLAIN command.</p>
+<p>A plan tree is composed of elements called <em>plan nodes</em>, and it is connected to the plantree list of the <em>PlannedStmt</em> structure. These elements are defined in <code>plannodes.h</code>. Details will be explained in <code>Section 3.3.3</code> (and <code>Section 3.5.4.2</code>).</p>
+<p>Each plan node has information that the executor requires for processing. In the case of a single-table query, the executor processes from the end of the plan tree to the root.</p>
+<p>For example, the plan tree shown in Figure 3.5 is a list of a sort node and a sequential scan node. Therefore, the executor scans the table <em>tbl_a</em> by a sequential scan and then sorts the obtained result.</p>
+<p>The executor reads and writes tables and indexes in the database cluster via the buffer manager described in <code>Chapter 8</code>. When processing a query, the executor uses some memory areas, such as temp_buffers and work_mem, allocated in advance and creates temporary files if necessary.</p>
+<p>In addition, when accessing tuples, PostgreSQL uses the concurrency control mechanism to maintain consistency and isolation of the running transactions. The concurrency control mechanism is described in <code>Chapter 5</code>.</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-06.png" /></p>
+<p>Figure 3.6. The relationship among the executor, buffer manager and temporary files.</p>
+<p>[[LLM Wiki/raw/clippings/中译-3.1. Overview  Hironobu SUZUKI @ InterDB.md|中译]]</p></body>
+</html>

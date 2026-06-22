@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>5.5. Transaction Snapshot  Hironobu SUZUKI @ InterDB</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>5.5. Transaction Snapshot</h1>
+<p>A <strong>transaction snapshot</strong> is a dataset that stores information about whether all transactions are active at a certain point in time for an individual transaction. Here an active transaction means it is in progress or has not yet started.</p>
+<p>PostgreSQL internally defines the textual representation format of transaction snapshots as ‘100:100:’. For example, ‘100:100:’ means that ’txids equal to or less than 99 are not active, while txids equal to or greater than 100 are active’.</p>
+<p>In the following descriptions, this convenient representation form is used. If you are not familiar with it, see below.</p>
+<p>The built-in function pg_current_snapshot and its textual representation format</p>
+<p>The function <code>pg_current_snapshot</code> shows a snapshot of the current transaction.</p>
+<pre><code class="language-sql">testdb=# SELECT pg_current_snapshot();
+ pg_current_snapshot
+---------------------
+ 100:104:100,102
+row
+</code></pre>
+<p>The textual representation of the txid_current_snapshot is <em>‘xmin:xmax:xip_list’</em>, and the components are described as follows:</p>
+<ul>
+<li>xmin
+    (earliest txid that is still active): All earlier transactions will either be committed and visible, or rolled back and dead.</li>
+<li>xmax
+    (first as-yet-unassigned txid): All txids greater than or equal to this are not yet started as of the time of the snapshot, and thus invisible.</li>
+<li>xip_list
+    (list of active transaction ids at the time of the snapshot): The list includes only active txids between xmin and xmax.</li>
+</ul>
+<p>For example, in the snapshot ‘100:104:100,102’, xmin is ‘100’, xmax ‘104’, and xip_list ‘100,102’.</p>
+<p>Here are two specific examples:</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql05/fig-5-08.png" /></p>
+<p>Figure 5.8. Examples of transaction snapshot representation.</p>
+<p>The first example is <em>‘100:100:’</em>. This snapshot means the following (Figure 5.8(a)):</p>
+<ul>
+<li>txids equal or less than 99 are <strong>not</strong> <em>active</em> because xmin is 100.</li>
+<li>txids equal or greater than 100 are <em>active</em> because xmax is 100.</li>
+</ul>
+<p>The second example is <em>‘100:104:100,102’</em>. This snapshot means the following (Figure 5.8(b)):</p>
+<ul>
+<li>txids equal or less than 99 are <strong>not</strong> <em>active</em>.</li>
+<li>txids equal or greater than 104 are <em>active</em>.</li>
+<li>txids 100 and 102 are <em>active</em> since they exist in the xip list, whereas txids 101 and 103 are <strong>not</strong> <em>active</em>.</li>
+</ul>
+<p>Transaction snapshots are provided by the transaction manager. In the READ COMMITTED isolation level, the transaction obtains a snapshot whenever an ==SQL command is executed;== otherwise (REPEATABLE READ or SERIALIZABLE), the transaction only gets a snapshot when the ==first SQL command== is executed. The obtained transaction snapshot is used for a visibility check of tuples, which is described in <code>Section 5.7</code>.</p>
+<p>When using the obtained snapshot for the visibility check, <em>active</em> transactions in the snapshot must be treated as <em>in progress</em> even if they have actually been committed or aborted. This rule is important because it causes the difference in the behavior between READ COMMITTED and REPEATABLE READ (or SERIALIZABLE). We refer to this rule repeatedly in the following sections.</p>
+<p>In the remainder of this section, the transaction manager and transactions are described using the specific scenario illustrated in Figure 5.9.</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql05/fig-5-09.png" /></p>
+<p>Figure 5.9. Transaction manager and transactions.</p>
+<p>The transaction manager always holds information about currently running transactions. Suppose that three transactions start one after another, and the isolation level of Transaction_A and Transaction_B are READ COMMITTED, and that of Transaction_C is REPEATABLE READ.</p>
+<ul>
+<li><strong>T1:</strong>
+    Transaction_A starts and executes the first SELECT command. When executing the first command, Transaction_A requests the txid and snapshot of this moment.
+    In this scenario, the transaction manager assigns txid 200, and returns the transaction snapshot ‘200:200:’.</li>
+<li><strong>T2:</strong>
+    Transaction_B starts and executes the first SELECT command. The transaction manager assigns txid 201, and returns the transaction snapshot ‘200:200:’ because Transaction_A (txid 200) is in progress. Thus, Transaction_A cannot be seen from Transaction_B.</li>
+<li><strong>T3:</strong>
+    Transaction_C starts and executes the first SELECT command. The transaction manager assigns txid 202, and returns the transaction snapshot ‘200:200:’, thus, Transaction_A and Transaction_B cannot be seen from Transaction_C.</li>
+<li><strong>T4:</strong>
+    Transaction_A has been committed. The transaction manager removes the information about this transaction.</li>
+<li><strong>T5:</strong>
+    Transaction_B and Transaction_C execute their respective SELECT commands.
+    Transaction_B requires a transaction snapshot because it is in the READ COMMITTED level.
+    In this scenario, Transaction_B obtains a new snapshot ‘201:201:’ because Transaction_A (txid 200) is committed. Thus, Transaction_A is no longer invisible from Transaction_B.
+    In contrast, Transaction_C does not require a transaction snapshot because it is in the REPEATABLE READ level and uses the obtained snapshot, i.e. ‘200:200:’. Thus, Transaction_A is still invisible from Transaction_C.</li>
+</ul>
+<p>[[LLM Wiki/raw/clippings/中译-5.5. Transaction Snapshot  Hironobu SUZUKI @ InterDB.md|中译]]</p></body>
+</html>

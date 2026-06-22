@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-05-29-postgres-is-all-you-need-for-durable-execution.summary</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>Postgres is All You Need for Durable Workflows</h1>
+<h2>一句话结论</h2>
+<p>文章认为：durable workflow 的本质是“把程序执行进度 checkpoint 到数据库”，既然核心已经是数据库，就没必要再引入 Temporal / Airflow / Step Functions 这类独立 orchestrator；直接用 Postgres 做协调、排队、checkpoint、恢复，系统会更简单、更可观测，也少一个关键故障点。</p>
+<h2>文章主旨</h2>
+<p>Durable workflow 解决的是：程序执行到一半崩溃时，可以从最后一个已完成步骤继续，而不是从头重来。常见方案是外部编排器：客户端提交 workflow，orchestrator 记录状态并派发给 worker；每个 step 完成后，worker 把结果回传给 orchestrator，由 orchestrator 写入存储并继续派发下一步。</p>
+<p>作者认为这个模型过度复杂。既然 durable workflow 的关键动作只是“保存每一步状态并在失败后恢复”，应用服务器完全可以直接通过 Postgres 协调：workflow 作为表中的记录，worker 从表中 dequeue，执行步骤后把输出 checkpoint 回 Postgres；worker 崩溃后，其他 worker 读取 checkpoint 接管。</p>
+<h2>关键论点</h2>
+<h3>1. Postgres 可以替代中心 orchestrator</h3>
+<p>在 Postgres-backed 模式中，没有独立 orchestrator。多个应用服务器通过 Postgres 表协作：</p>
+<ul>
+<li>客户端创建 workflow 记录；</li>
+<li>worker 轮询并领取可执行 workflow；</li>
+<li>通过锁机制保证同一 workflow 只被一个 worker 拿到；</li>
+<li>每个 step 的输出直接写入 Postgres；</li>
+<li>如果多个 worker 重复执行，依靠唯一约束 / 完整性约束发现重复 checkpoint 并回退；</li>
+<li>worker 挂掉后，其他 worker 从 checkpoint 恢复执行。</li>
+</ul>
+<p>这把“编排”从一个独立服务变成数据库上的并发控制问题。</p>
+<h3>2. 可扩展性和可用性继承自数据库</h3>
+<p>系统吞吐取决于 Postgres 能多快处理 workflow 记录和 checkpoint。worker 层可以水平扩展，因为 worker 是无状态 / 可替换的；只要数据库可用，workflow 状态就可恢复。</p>
+<p>作者强调 Postgres 的扩展与高可用已经是成熟问题：单机 Postgres 可以纵向扩展到每秒数万 workflow；更大规模可以用分布式 Postgres、CockroachDB 或分片；高可用可以依靠流复制、自动 failover、云厂商 multi-AZ SLA。</p>
+<h3>3. 可观测性天然更强</h3>
+<p>workflow 和 step checkpoint 都是 Postgres 表中的结构化数据，所以监控、排障、分析可以直接写 SQL。比如查询最近一个月失败的 workflow、按 step 聚合耗时、找卡住的任务等，都可以使用 SQL、索引和数据库优化器。</p>
+<p>作者对比指出，很多外部 orchestrator 底层使用 key-value 存储，复杂查询能力弱；而 Postgres 的关系模型和二级索引让 workflow observability 几乎“免费”。</p>
+<h3>4. 可靠性和安全面更小</h3>
+<p>外部 orchestrator + orchestrator datastore 会新增关键基础设施：orchestrator 挂了，应用 workflow 停摆；它还会持有 workflow checkpoint，可能包含敏感业务数据，因此也要做鉴权、审计、加固。</p>
+<p>如果业务本来已经依赖 Postgres，那么直接用 Postgres 做 durable execution 不会增加新的关键故障点，也不会让敏感状态流经新系统。安全和可靠性的重点仍然集中在已有数据库上。</p>
+<h2>举例理解</h2>
+<p>可以把传统外部 orchestrator 想成“一个专门的项目经理”：所有 worker 都要向它报备进度，由它记录状态和安排下一步。Postgres-backed 模式则像“所有人共用一张强一致任务表”：谁拿任务、做到哪一步、结果是什么、失败后谁接手，都写在同一个数据库里，用事务、锁、约束保证一致性。</p>
+<h2>启发</h2>
+<p>这篇文章的价值不只是宣传 DBOS，而是提出一个架构判断：如果一个系统已经强依赖 Postgres，很多“平台层”能力未必需要再引入新中间件。durable execution、队列、状态机、审计、查询、恢复，都可以优先问一句：用现有数据库能不能足够好地完成？</p>
+<p>不过这个观点更适合 workflow 状态和业务数据都能接受放在同一个数据库里的场景。若 workflow 极大规模、跨语言生态、复杂外部系统集成、长时间 timer、或已经有成熟 Temporal 体系，外部 orchestrator 仍可能更合适。</p>
+<h2>我的理解</h2>
+<p>这篇文章本质是在反对“为了 durable execution 而引入一个新的分布式系统”。它把问题重新降维成数据库事务、锁、约束、表结构和 SQL 查询。优点是简单、直接、贴近业务数据；代价是你需要非常认真地设计表结构、锁竞争、重试语义、幂等和 checkpoint 粒度。</p>
+<p>如果团队已经很懂 Postgres，这条路线很有吸引力；如果团队不擅长数据库并发控制，Temporal 这类系统虽然复杂，但也替你封装了大量边界条件。</p></body>
+</html>

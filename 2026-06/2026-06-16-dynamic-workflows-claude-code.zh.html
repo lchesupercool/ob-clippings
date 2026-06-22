@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-06-16-dynamic-workflows-claude-code.zh</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>为每个任务定制 harness：Claude Code 中的动态工作流  | Claude</h1>
+<p>Source: <a href="https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code">https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code</a><br />
+Author: Thariq Shihipar<br />
+Saved: 2026-06-16 14:39 +0800</p>
+<p>上周，我们在 Claude Code 中发布了<a href="https://code.claude.com/docs/en/workflows">动态工作流</a>。Claude 现在可以即时编写自己的 <a href="https://code.claude.com/docs/en/glossary#agentic-harness">harness</a>，针对手头任务量身定制。</p>
+<p>虽然 Claude Code 的默认 harness 是为编程构建的，但它对许多其他类型的任务也很有用——因为事实上，许多任务都类似于编程任务。但有一些特定类型的任务，我们必须基于 Claude Code 构建自定义 harness 才能达到最佳表现：例如<a href="https://support.claude.com/en/articles/11088861-using-research-on-claude">研究</a>、<a href="https://support.claude.com/en/articles/11932705-automated-security-reviews-in-claude-code">安全分析</a>、<a href="https://code.claude.com/docs/en/agent-teams">agent teams</a> 或 <a href="https://code.claude.com/docs/en/code-review">Code Review</a>。</p>
+<p>动态工作流允许你在 Claude Code 之上动态创建 harness，使 Claude 能够更原生地解决上述所有问题。你还可以与他人共享和重用这些工作流。</p>
+<p>在本文中，我将分享我最初使用工作流的经验和学习，以便你能最好地充分利用它们。请记住，最佳实践仍在发展中：动态工作流通常消耗更多 token，最适合复杂的、高价值的任务。</p>
+<h2>示例 prompt</h2>
+<p>在深入技术细节之前，我想从一些示例 prompt 开始，帮助你思考工作流的可能性：</p>
+<p>"这个测试大约每 50 次运行就会失败一次。设置一个工作流来复现它。形成关于 race condition 的竞争性理论，直到其中一个理论经受住证据的考验。"</p>
+<p>"使用工作流，浏览我最近 50 个 session，挖掘我反复做的修正，并把反复出现的规则提炼到 <code>CLAUDE.md</code> 中。"</p>
+<p>"使用工作流深入挖掘 Slack 中过去六个月的 #incidents 频道，找出没有人提交过 ticket 的反复出现的根本原因。"</p>
+<p>"拿着我的商业计划，运行一个工作流，让不同的 agent 从投资人、客户和竞争对手的视角来拆解它。"</p>
+<p>"这里有 80 份简历的文件夹，使用工作流为后端职位排序，并复查前十名。使用 AskUserQuestion 工具采访我以制定评分标准。"</p>
+<p>"我需要为这个 CLI 工具起个名字。使用工作流头脑风暴一堆选项，然后运行 tournament 选出前三名。"</p>
+<p>"使用工作流，将我们的 User 模型在所有地方重命名为 Account。"</p>
+<p>"使用工作流检查我的博客文章草稿，对照代码库验证每一条技术声明，我不想发布任何错误内容。"</p>
+<h2>动态工作流如何工作</h2>
+<p>动态工作流执行一个 JavaScript 文件，其中包含一些特殊函数，帮助派生和协调 <a href="https://code.claude.com/docs/en/sub-agents">subagents</a>：</p>
+<p><img alt="" src="https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f1684f559cc83ff4b465b_image1.png" /></p>
+<p>动态工作流还包含标准的 JavaScript 函数，如 JSON、Math 和 Array，用于处理数据。</p>
+<p>特别值得知道的是，动态工作流可以决定 agent 使用哪个模型，以及 subagent 是否在自己的 worktree 中运行，从而允许 Claude 选择合适的智能水平和隔离程度。</p>
+<p>如果工作流被中断——例如用户操作或退出了终端——恢复 session 后，工作流将从中断处继续。</p>
+<h2>为什么需要动态工作流</h2>
+<p>当你让默认的 Claude Code harness 执行任务时，它需要在同一个 context window 中同时完成规划和执行。对于许多编程任务来说，这非常高效，但在长时间运行、大规模并行、高度结构和/或对抗性任务中，这可能会失效。</p>
+<p>这是因为 Claude 在单个 context window 中处理复杂任务的时间越长，就越容易受到几种特定故障模式的影响：</p>
+<ul>
+<li><strong>Agentic laziness（智能体惰性）：</strong> Claude 在完成一个特别复杂的多部分任务前就停下来，在取得部分进展后就宣布工作完成，例如在安全审查中只处理了 50 项中的 35 项。</li>
+<li><strong>Self-preferential bias（自我偏好偏差）：</strong> Claude 倾向于偏好自己的结果或发现，尤其是在要求它根据评分标准验证或评判这些结果时。</li>
+<li><strong>Goal drift（目标漂移）：</strong> 经过多次轮转，尤其是在 compaction 之后，对原始目标的忠实度逐渐丧失。每次 summarization 步骤都是有损的，边界条件要求或"不要做 X"等约束可能会丢失。</li>
+</ul>
+<p>创建工作流通过编排独立的 Claude subagents——每个拥有自己的 context window 和专注、隔离的目标——来对抗上述问题。</p>
+<h2>动态 vs 静态工作流</h2>
+<p>你可能之前使用 Claude Agent SDK 或 <code>claude -p</code> 创建过静态工作流来协调多个 Claude Code 实例。</p>
+<p>但由于静态工作流需要处理所有边缘情况，它们通常更通用。借助 <a href="https://www.anthropic.com/news/claude-opus-4-8">Claude Opus 4.8</a> 和动态工作流，Claude 现在足够智能，可以为你的具体用例编写量身定制的 harness。</p>
+<p><img alt="" src="https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f3a0e17e2844bed86f22a_image9.png" /></p>
+<h2>使用动态工作流时的有用模式</h2>
+<p>你可以直接让 Claude 创建一个工作流来开始使用，或使用触发词 "<code>ultracode</code>" 来确保 Claude Code 创建一个工作流。</p>
+<p>但建立动态工作流如何工作的心智模型，将帮助你理解何时使用它们，以及如何通过 prompt 来引导 Claude。</p>
+<p>==Claude 在构建工作流时可能会使用并组合以下几种常见模式：==</p>
+<p><img alt="" src="https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f16d86247e586b929a407_image10.png" /></p>
+<h3>Classify-and-act（分类并执行）</h3>
+<p>使用一个 classifier agent 来决定任务类型，然后根据任务路由到不同的 agent 或行为。或者，在最后使用 classifier 来确定输出。</p>
+<h3>Fan-out-and-synthesize（扇出并综合）</h3>
+<p>将任务拆分为许多小步骤，对每个步骤运行一个 agent，然后综合这些结果。这在有大量小步骤，或每个步骤都受益于自己的干净 context window 以避免相互干扰或交叉污染时特别有用。综合步骤是一个 barrier——它等待所有 fan-out agents 完成后，将它们的结构化输出合并为一个结果。</p>
+<h3>Adversarial verification（对抗性验证）</h3>
+<p>对于每个派生出的 agent，运行一个单独的 agent 来对照评分标准或准则对抗性地验证其输出。</p>
+<h3>Generate-and-filter（生成并筛选）</h3>
+<p>生成关于某个主题的大量想法，然后根据评分标准或验证进行筛选，去重重复项，只返回最高质量的、经过测试的想法。</p>
+<h3>Tournament（锦标赛）</h3>
+<p>不让 agents 分工，而是让它们竞争。派生出 N 个 agent，每个使用不同方法尝试同一任务。然后由 prompt 或模型使用评判 agent 以 pairwise 方式评判结果，直到产生胜者。</p>
+<h3>Loop until done（循环直到完成）</h3>
+<p>对于工作量未知的任务，循环派生 agents 直到满足停止条件（没有新发现，或日志中不再有错误），而不是固定次数的 pass。</p>
+<h2>用例</h2>
+<p>创造性地思考何时以及如何让 Claude Code 制作动态工作流。我发现，工作流有时对非技术性工作更有用。</p>
+<h3>迁移和重构</h3>
+<p><a href="https://bun.com/">Bun</a> 从 Zig 重写为 Rust 时使用了工作流。你可以在 <a href="https://x.com/jarredsumner/status/2060050578026189172">Jarred 的 X thread</a> 中了解更多细节。</p>
+<p>关键是将任务分解为一系列需要操作的步骤，例如 callsites、失败的测试、模块等。为每个 fix 派生一个 subagent 在 worktree 中进行修复，然后让另一个 agent 进行对抗性审查，最后合并。考虑告诉 agent 不要使用资源密集型命令，以便在不超过机器资源的情况下最大化并行度。</p>
+<h3>深度研究</h3>
+<p>我们在 Claude Code 内部发布了一个使用动态工作流的 ==deep research skill==（<code>/deep-research</code>）。具体来说，它会 fan-out 网络搜索、获取来源、对抗性地验证其声明，并综合生成带引用的报告。</p>
+<p>但你做这类研究不仅仅是为了网络搜索。例如，要求 Claude 从 Slack 上下文中编制状态报告，或通过深入探索代码库来研究某个功能是如何工作的。</p>
+<h3>深度验证</h3>
+<p><img alt="" src="https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f1721824a27cf13da87f4_image2.png" /></p>
+<p>另一方面，如果你有一份报告，==想要检查并溯源其中引用的每一条事实性声明==，你可以生成一个工作流，让一个 agent 识别所有事实性声明，然后为每个声明派生一个 subagent 进行详细检查。你还可以让一个 verification agent 检查 source subagent，确保其来源质量足够高。</p>
+<h3>排序</h3>
+<p><img alt="" src="https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f173ce727a972001584cc_image3.png" /></p>
+<p>你可能有一系列项目，希望根据你相信 Claude Code 善于评估的某种定性度量来排序，例如：按 bug 严重性排序的 support tickets。但如果你试图在一个 prompt 中对 1000+ 行进行排序，质量会下降并且无法装入 context。相反，可以运行 tournament、pairwise-comparison agents 的 pipeline（比较性判断比绝对评分更可靠），或 bucket-rank 后并行合并。每次比较都是自己的 agent，因此确定性循环只持有 bracket，只有排序结果保留在 context 中。</p>
+<h3>记忆和规则遵循</h3>
+<p><img alt="" src="https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f17517076bb59050d90bb_image8.png" /></p>
+<p>如果你有一些特定的规则，即使放在 <code>CLAUDE.md</code> 中，你发现 Claude 仍然会遗漏或难以遵循，那么就创建一个工作流，包含一个规则列表，由 verifier agents 逐一检查——每条规则一个 verifier。创建一个 skeptic persona subagent 来审查这些规则，确保它们符合预期，将有助于避免过多的误报。</p>
+<p>反向路径同样有效：挖掘你最近的 session 和 code review 评论中反复出现的修正，用并行 agents 聚类，对抗性地验证每个候选规则（这条规则是否真的能防止某个真实错误？），然后将幸存者提炼回 <code>CLAUDE.md</code>。</p>
+<h3>根因调查</h3>
+<p>当你提出几个独立的假设并逐一测试时，调试效果最好。但如果你只使用一个 context window，Claude 可能会陷入 self-preferential bias。</p>
+<p>工作流可以通过从不相交的证据中派生 agents 生成假设来从结构上防止这种情况的发生。例如，为日志、文件和数据分别分配 agent。然后每个假设面对一组 verifiers 和 refuters 的评审。</p>
+<p>这不仅适用于代码。工作流可以用于销售（为什么三月销售额下降？）、数据工程（为什么这个 pipeline 失败了？）或任何 post-mortem 练习。</p>
+<h3>大规模 triage</h3>
+<p><img alt="" src="https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f1778dc00d34cca70819d_image6.png" /></p>
+<p>每个团队都有 support queue、bug reports 或其他人类无法完全处理的 backlog。</p>
+<p>一个 triage 工作流对每个项目进行分类，与已跟踪的项目去重，然后采取行动。这可能意味着尝试修复或升级给人类用户。</p>
+<p>triage 工作流的一个有用模式是 quarantine（隔离）。这涉及阻止读取不可信公共内容的 agents 执行高权限操作，这些操作由负责处理信息的 agents 执行。</p>
+<p>将 triage 工作流与 <code>/loop</code> 配对，可以让 Claude 持续执行此操作。</p>
+<h3>探索和品味</h3>
+<p>工作流在探索解决方案的不同方法时很有用，尤其是当它基于品味时——比如设计或命名——并且能从一个评分标准中受益。</p>
+<p>尝试让 Claude 探索大量解决方案，并给 review agent 一个关于"好的解决方案什么样"的评分标准。任务在 review agent 认为已满足标准时完成。解决方案也可以根据评分标准通过 tournament 来排序或选择。</p>
+<h3>Evals</h3>
+<p>你可以通过在工作树中派生独立 agents，然后派生比较 agents 来对照评分标准比较和评分特定输出来运行轻量级 evals。例如，评估并改进你创建的某个 skill 在特定标准下的表现。</p>
+<h3>模型和智能路由</h3>
+<p>创建一个针对你任务调整的 classifier agent，来决定使用哪个模型。当你的任务涉及大量工具调用时，在执行前进行研究可以识别出最适合该任务的模型。</p>
+<p>例如，"解释 auth 模块如何工作"这个任务的最佳模型取决于 auth 模块中有多少文件以及代码库的结构。classifier agent 可以完成这项研究，然后根据预期的任务复杂度路由到 Sonnet 或 Opus。</p>
+<h2>何时不使用动态工作流</h2>
+<p>工作流是新的。虽然有很多用例会产生超乎寻常的结果，但并非每个任务都需要它们，并且可能最终消耗显著更多的 token。</p>
+<p>最好创造性地使用工作流，以你以前未曾有过的方式推动 Claude Code。对于常规编程任务，试着问自己：它真的需要更多算力吗？例如，大多数传统编程任务不需要五个 review agents 的评审团。</p>
+<h2>构建动态工作流的提示</h2>
+<h3>Prompt 编写</h3>
+<p>使用我们上述描述的具体技术，为动态工作流编写详细的 prompt 能获得最佳结果。</p>
+<p>工作流不仅仅用于大型任务。你可以 prompt 模型使用"快速工作流"。例如，你可以对某个假设进行一次快速的对抗性审查。</p>
+<h3>与 <code>/goal</code> 和 <code>/loop</code> 组合使用</h3>
+<p>当使用的流可以重复时——例如 triage、研究或验证——将它们与 <code>/loop</code> 配对以定期运行，并与 <code>/goal</code> 配对以设置硬性的完成要求。</p>
+<h3>Token 使用预算</h3>
+<p>你可以为动态工作流设置显式的 token 使用预算，以限制任务消耗的 token 数量。你可以用类似于"use 10k tokens"这样的 budget 来 prompt 它。</p>
+<h3>保存和共享动态工作流</h3>
+<p>你可以通过在工作流菜单中按"s"来保存工作流。你可以将这些文件 check in 到 <code>~/.claude/workflows</code>，或通过 skill 来分发它们。</p>
+<p><img alt="" src="https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f17b1ca20533e666c867c_image4.png" /></p>
+<p>要通过 skill 分享它们，将你的 JavaScript 工作流文件放在 skill 文件夹中，并在 <a href="http://skill.md">SKILL.MD</a> 中引用它们。为了更灵活，你可以提示 Claude 将 skill 中的工作流视为模板，而不是必须逐字运行的脚本。</p>
+<p><img alt="" src="https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f17cb835cf4f9fd5da921_image7.png" /></p>
+<h2>发现的新起点</h2>
+<p>工作流是扩展 Claude Code 的一种有用的新方法。我鼓励你把它们视为探索新方式使用 Claude 帮助完成任务的起点。关于如何最好地使用它们，还有很多待发现的地方。让我知道你能发现什么。</p>
+<p><em>本文由 Anthropic 技术团队成员 Thariq Shihipar 和 Sid Bidasaria 撰写，他们均从事 Claude Code 相关工作。</em></p></body>
+</html>

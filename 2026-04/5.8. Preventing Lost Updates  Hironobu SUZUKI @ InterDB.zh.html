@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>5.8. Preventing Lost Updates  Hironobu SUZUKI @ InterDB.zh</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h2>5.8. 防止丢失更新</h2>
+<p><strong>丢失更新</strong>（Lost Update），也称为 <strong>ww-conflict</strong>，是一种在并发事务更新相同行时发生的异常，并且必须在 REPEATABLE READ 和 SERIALIZABLE 级别中被防止。（注意，READ COMMITTED 级别不需要防止丢失更新。）本节描述 PostgreSQL 如何防止丢失更新，并展示示例。</p>
+<h3>5.8.1. 并发 UPDATE 命令的行为</h3>
+<p>当执行 UPDATE 命令时，内部会调用函数 ExecUpdate。ExecUpdate 的伪代码如下所示：</p>
+<pre><code class="language-ruby">(1)   FOR each row that will be updated by this UPDATE command
+(2)        WHILE true
+
+                /*
+                 * The First Block
+                 */
+(3)             IF the target row is 'being updated' THEN
+(4)                 WAIT for the termination of the transaction that updated the target row
+
+(5)                  IF (the status of the terminated transaction is COMMITTED)
+                      AND (the isolation level of this transaction is REPEATABLE READ or SERIALIZABLE) THEN
+(6)                      ABORT this transaction  /* First-Updater-Win */
+                     ELSE
+(7)                       GOTO step (2)
+                     END IF
+
+                /*
+                 * The Second Block
+                 */
+(8)             ELSE IF the target row has been updated by another concurrent transaction THEN
+(9)                  IF (the isolation level of this transaction is READ COMMITTED THEN
+UPDATE
+                     ELSE
+(11)                      ABORT this transaction  /* First-Updater-Win */
+                     END IF
+
+                /*
+                 * The Third Block
+                 */
+                ELSE  /* The target row is not yet modified               */
+                      /* or has been updated by a terminated transaction. */
+UPDATE
+                END IF
+           END WHILE
+      END FOR
+</code></pre>
+<ol>
+<li>获取将由此 UPDATE 命令更新的每一行。</li>
+<li>重复以下过程，直到目标行已被更新（或此事务被中止）。</li>
+<li>如果目标行<em>正在被更新</em>，则转到步骤 (3)；否则，转到步骤 (8)。</li>
+<li>等待更新目标行的事务终止，因为 PostgreSQL 在 SI 中使用 <em>first-updater-win</em> 方案。</li>
+<li>如果更新目标行的事务状态为 COMMITTED，并且此事务的隔离级别是 REPEATABLE READ（或 SERIALIZABLE），则转到步骤 (6)；否则，转到步骤 (7)。</li>
+<li>中止此事务以防止丢失更新。</li>
+<li>转到步骤 (2)，并在下一轮尝试更新目标行。</li>
+<li>如果目标行已被另一个并发事务更新，则转到步骤 (9)；否则，转到步骤 (12)。</li>
+<li>如果此事务的隔离级别是 READ COMMITTED，则转到步骤 (10)；否则，转到步骤 (11)。</li>
+<li>UPDATE 目标行，并转到步骤 (1)。</li>
+<li>中止此事务以防止丢失更新。</li>
+<li>UPDATE 目标行，并转到步骤 (1)，因为目标行尚未被修改，或已被一个已终止的事务更新，即存在 ww-conflict。</li>
+</ol>
+<p>该函数会对每一个目标行执行更新操作。它有一个 while 循环用于更新每一行，而 while 循环内部会根据图 5.11 所示的条件分支到三个块。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql05/fig-5-11.png" /></p>
+<p>图 5.11. ExecUpdate 中的三个内部块。</p>
+<ul>
+<li>[1] 目标行正在被更新（图 5.11[1]）<br />
+    “正在被更新”表示该行正在被另一个并发事务更新，并且该事务尚未终止。<br />
+    在这种情况下，当前事务必须等待更新目标行的事务终止，因为 PostgreSQL 的 SI 使用 <strong>first-updater-win</strong> 方案。<br />
+    例如，假设事务 Tx_A 和 Tx_B 并发运行，且 Tx_B 试图更新某一行；然而，Tx_A 已经更新了该行并且仍在进行中。在这种情况下，Tx_B 会等待 Tx_A 终止。<br />
+    在更新目标行的事务提交后，当前事务的更新操作继续进行。<br />
+    如果当前事务处于 READ COMMITTED 级别，则目标行将被更新；否则（REPEATABLE READ 或 SERIALIZABLE），当前事务会立即中止，以防止丢失更新。</li>
+<li>[2] 目标行已被并发事务更新（图 5.11[2]）<br />
+    当前事务试图更新目标元组；然而，另一个并发事务已经更新了目标行，并且已经提交。<br />
+    在这种情况下，如果当前事务处于 READ COMMITTED 级别，则目标行将被更新；否则，当前事务会立即中止，以防止丢失更新。</li>
+<li>[3] 没有冲突（图 5.11[3]）<br />
+    当没有冲突时，当前事务可以更新目标行。</li>
+</ul>
+<p>First-updater-win / First-commiter-win</p>
+<p>如本节所述，PostgreSQL 基于 SI 的并发控制使用 <em>first-updater-win</em> 方案来避免丢失更新异常。相比之下，如下一节所解释，PostgreSQL 的 SSI 使用 <em>first-committer-win</em> 方案来避免序列化异常。</p>
+<h3>5.8.2. 示例</h3>
+<p>下面展示三个示例。第一个和第二个示例展示目标行正在被更新时的行为，第三个示例展示目标行已经被更新时的行为。</p>
+<h5>5.8.2.1. 示例 1</h5>
+<p>事务 Tx_A 和 Tx_B 更新同一个表中的同一行，并且它们的隔离级别都是 READ COMMITTED。</p>
+<pre><code class="language-sql">testdb=# -- Tx_A
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Hyde';
+UPDATE 1
+
+testdb=# COMMIT;
+COMMIT
+</code></pre>
+<pre><code class="language-sql">testdb=#
+testdb=# -- Tx_B
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Utterson';
+
+(this transaction is being blocked)
+
+UPDATE 1
+</code></pre>
+<p>Tx_B 按如下方式执行。</p>
+<ol>
+<li>执行 UPDATE 命令后，Tx_B 应等待 Tx_A 终止，因为目标元组正在被 Tx_A 更新（ExecUpdate 中的步骤 (4)）。</li>
+<li>Tx_A 提交后，Tx_B 尝试更新目标行（ExecUpdate 中的步骤 (7)）。</li>
+<li>在 ExecUpdate 的第二轮中，目标行再次由 Tx_B 更新（ExecUpdate 中的步骤 (2)、(8)、(9)、(10)）。</li>
+</ol>
+<h5>5.8.2.2. 示例 2</h5>
+<p>Tx_A 和 Tx_B 更新同一个表中的同一行，并且它们的隔离级别分别为 READ COMMITTED 和 REPEATABLE READ。</p>
+<pre><code class="language-sql">testdb=# -- Tx_A
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Hyde';
+UPDATE 1
+
+testdb=# COMMIT;
+COMMIT
+</code></pre>
+<pre><code class="language-sql">testdb=#
+testdb=# -- Tx_B
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL REPEATABLE READ;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Utterson';
+
+(this transaction is being blocked)
+
+ERROR:couldn't serialize access due to concurrent update
+</code></pre>
+<p>Tx_B 的行为描述如下。</p>
+<ol>
+<li>执行 UPDATE 命令后，Tx_B 应等待 Tx_A 终止（ExecUpdate 中的步骤 (4)）。</li>
+<li>Tx_A 提交后，Tx_B 被中止以解决冲突，因为目标行已被更新，并且此事务的隔离级别是 REPEATABLE READ（ExecUpdate 中的步骤 (5) 和 (6)）。</li>
+</ol>
+<h5>5.8.2.3. 示例 3</h5>
+<p>Tx_B（REPEATABLE READ）尝试更新已被已提交的 Tx_A 更新过的目标行。在这种情况下，Tx_B 被中止（ExecUpdate 中的步骤 (2)、(8)、(9) 和 (11)）。</p>
+<pre><code class="language-sql">testdb=# -- Tx_A
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION
+
+testdb=# UPDATE tbl SET name = 'Hyde';
+UPDATE 1
+
+testdb=# COMMIT;
+COMMIT
+</code></pre>
+<pre><code class="language-sql">testdb=#
+testdb=#
+testdb=# -- Tx_B
+testdb=# START TRANSACTION
+testdb-#    ISOLATION LEVEL REPEATABLE READ;
+START TRANSACTION
+testdb=# SELECT * FROM tbl;
+  name
+--------
+ Jekyll
+row
+testdb=# UPDATE tbl SET name = 'Utterson';
+ERROR:couldn't serialize access due to concurrent update
+</code></pre></body>
+</html>

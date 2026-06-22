@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-06-15-boringsql-not-in-null.zh</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>NOT IN 里的 NULL</h1>
+<p>一个 <code>NOT IN</code> 查询可能悄悄返回错误答案。它是合法 SQL，可以正常运行，没有错误，并返回一个格式完全正常的结果集——只是这个结果集为空，而它本不该为空。没有 warning，没有 hint，日志里也什么都没有：你期待几百行，结果是 0 行，而数据库认为这是正确的。</p>
+<p>原因几乎总是：某个你忘记检查的位置有一个 <code>NULL</code>，再加上你已经敲过无数次的两个关键字：<code>NOT IN</code>。这不是 PostgreSQL 的 bug。这正是 SQL 标准要求的行为，Postgres 只是忠实实现了它。也正因为如此，它很容易踩中；也解释了为什么大约二十五年来，planner 都无法安全地绕过这个问题。最终，它可以追溯到 parser 里的一个 <code>if</code> 语句。</p>
+<h2>示例 schema</h2>
+<p>不需要复杂结构。一个产品表，其中有一个产品还没有分配 category；另一个 archived categories 表，里面恰好有一个 <code>NULL</code>：</p>
+<pre><code class="language-sql">CREATE TABLE products (id int, category_id int);
+INSERT INTO products VALUES (1, 10), (2, 20), (3, NULL), (4, 10);
+
+CREATE TABLE archived (category_id int);
+INSERT INTO archived VALUES (20), (NULL);
+</code></pre>
+<p><code>archived</code> 里的这个 <code>NULL</code> 并不牵强。只要一个列允许为空（大多数列默认如此），<code>NULL</code> 就可能进入任何你拿来做 <code>NOT IN</code> 的子查询。这正是重点：这不是罕见数据条件，而是普通情况。</p>
+<h2>返回空结果的查询</h2>
+<p>这个需求你可能写过无数次：给我所有 category 没有被归档的产品。</p>
+<pre><code class="language-sql">SELECT id, category_id FROM products
+WHERE category_id NOT IN (SELECT category_id FROM archived);
+</code></pre>
+<p>你期待得到产品 1 和 4（category 10，不在 archived 集合里）。实际返回：</p>
+<pre><code class="language-sql"> id | category_id
+----+-------------
+(0 rows)
+</code></pre>
+<p>所有行都没了。不是少了一部分，也不是差一行，而是全部消失。把 <code>archived</code> 里的 <code>NULL</code> 去掉，同一个查询就正常了：</p>
+<pre><code class="language-sql">SELECT id, category_id FROM products
+WHERE category_id NOT IN (SELECT category_id FROM archived
+                          WHERE category_id IS NOT NULL);
+</code></pre>
+<pre><code class="language-sql"> id | category_id
+----+-------------
+  1 |          10
+  4 |          10
+(2 rows)
+</code></pre>
+<p>要理解为什么一个 <code>NULL</code> 会清空整个结果，我们必须停止把 <code>NOT IN</code> 当成一个单独操作，而要看 parser 如何拆解它。</p>
+<h2>IN 是 OR，NOT IN 是 AND</h2>
+<p><code>IN</code> 不是一个 primitive operator。它是 parser 改写出来的简写：一串 equality comparison，用 <code>OR</code> 连接：</p>
+<pre><code class="language-sql">x IN (a, b, c)
+-- becomes
+x = a OR x = b OR x = c
+</code></pre>
+<p><code>NOT IN</code> 是它的逻辑否定。根据德摩根律，否定一串 <code>OR</code> equality，会得到一串用 <code>AND</code> 连接的不等式：</p>
+<pre><code class="language-sql">x NOT IN (a, b, c)
+-- becomes
+x &lt;&gt; a AND x &lt;&gt; b AND x &lt;&gt; c
+</code></pre>
+<p>这不是类比。这就是 PostgreSQL 实际构建的表达式，你可以直接从 <code>EXPLAIN</code> 里读出来。literal-list 形式会折叠成 array operator，名字已经说明了一切：</p>
+<pre><code class="language-sql">EXPLAIN (COSTS OFF) SELECT * FROM products WHERE category_id IN (1, 2, 3);
+--  Filter: (category_id = ANY ('{1,2,3}'::integer[]))
+
+EXPLAIN (COSTS OFF) SELECT * FROM products WHERE category_id NOT IN (1, 2, 3);
+--  Filter: (category_id &lt;&gt; ALL ('{1,2,3}'::integer[]))
+</code></pre>
+<p><code>IN</code> 是 <code>= ANY</code>：等于任意一个元素，也就是 <code>OR</code>。<code>NOT IN</code> 是 <code>&lt;&gt; ALL</code>：必须不同于所有元素，也就是 <code>AND</code>。</p>
+<p>这里的实际节点类型很重要，因为当你 dump parse tree，或者读规范化后的 <a href="https://boringsql.com/posts/pg-stat-statements/"><code>pg_stat_statements</code></a> 条目时，看到的就是这些东西。literal list 会编译成一个 <code>ScalarArrayOpExpr</code>：左边是 scalar，右边是 array，而 <code>useOr</code> 这个 flag 就是 <code>= ANY</code> 和 <code>&lt;&gt; ALL</code> 的全部区别。子查询形式则是另一种节点：<code>SubLink</code>。一眼认出这两个名字，就能知道 planner 走的是哪条路径。</p>
+<p>如果“<code>IN</code> 和 <code>= ANY</code> 是同一个 operator”对你来说是新知识：它们会编译成同一个 parse node 和同一个 plan，只是在 plan cache churn 和 selectivity estimates 上拼写不同。本文里的 <code>NOT IN</code> 是一个例外：这里的选择不是语法审美问题，而是 correctness 问题。</p>
+<h2>三值逻辑完成剩下的部分</h2>
+<p>SQL 不是两值逻辑，而是三值逻辑：true、false、unknown。任何和 <code>NULL</code> 的比较都会得到 <code>unknown</code>，因为 <code>NULL</code> 表示“这里没有值”，你不能问一个不存在的值是否不同于 20：</p>
+<pre><code class="language-sql">-- not false. unknown (displayed as a blank)
+SELECT 10 &lt;&gt; NULL;
+</code></pre>
+<p>现在把产品 1（category 10）代入 archived 集合 <code>{20, NULL}</code>，展开 <code>NOT IN</code>：</p>
+<pre><code class="language-sql">10 &lt;&gt; 20 AND 10 &lt;&gt; NULL
+true     AND unknown
+unknown
+</code></pre>
+<p><code>true AND unknown</code> 是 <code>unknown</code>，不是 <code>true</code>。<code>WHERE</code> 只保留 predicate 结果为 true 的行。<code>false</code> 和 <code>unknown</code> 都会导致行被丢弃。所以产品 1 被丢掉。产品 4 同理，也会得到 <code>unknown</code>。</p>
+<p>一句话总结机制：只要右侧出现一个 <code>NULL</code>，尾部那个 <code>AND unknown</code> 项就永远不可能为 true，于是整个 <code>NOT IN</code> 永远不可能为 true，于是每一行都会被丢弃——无论你有几百万行，也无论行里是什么值。</p>
+<h2>左侧的 NULL 也一样</h2>
+<p>只把子查询里的 <code>NULL</code> 排除还不够。左侧有 <code>NULL</code> 也会产生同样的 <code>unknown</code>：产品 3 的 <code>category_id</code> 是 <code>NULL</code>，即使右侧集合完全没有 <code>NULL</code>，它也会计算成 <code>unknown AND unknown</code>，然后被丢弃。</p>
+<p><code>IN</code> 和 <code>NOT IN</code> 不是互补关系：同一行可以同时不满足这两个测试。它们之间存在一个 <code>NULL</code> 形状的空隙，既不属于 <code>IN</code>，也不属于 <code>NOT IN</code>。</p>
+<h2>源码里的分叉点</h2>
+<p>这一切都可以缩减到一个函数里的一个分支。打开 <code>src/backend/parser/parse_expr.c</code>，找到 <code>transformAExprIn</code>。这个函数负责把 <code>IN</code> 和 <code>NOT IN</code> list expression 转成 planner 能处理的结构。它首先决定的是：构建 <code>OR</code> 还是 <code>AND</code>：</p>
+<pre><code class="language-sql">/*
+ * If the operator is &lt;&gt;, combine with AND not OR.
+ */
+if (strcmp(strVal(linitial(a-&gt;name)), &quot;&lt;&gt;&quot;) == 0)
+    useOr = false;
+else
+    useOr = true;
+</code></pre>
+<p>这就是整个分叉。<code>IN</code> 带着 operator <code>=</code> 进入，于是 <code>useOr = true</code>；<code>NOT IN</code> 带着 <code>&lt;&gt;</code> 进入，于是 <code>useOr = false</code>。这个 flag 会一路传到几百行之后最终组装 boolean tree 的位置：</p>
+<pre><code class="language-sql">result = (Node *) makeBoolExpr(useOr ? OR_EXPR : AND_EXPR,
+                               list_make2(result, cmp),
+                               a-&gt;location);
+</code></pre>
+<p><code>IN</code> 用 <code>OR_EXPR</code>，<code>NOT IN</code> 用 <code>AND_EXPR</code>。这个函数里没有任何针对 <code>NULL</code> 的 special case，也不需要有。三值逻辑行为是选择了 <code>AND</code> 之后自然涌现出来的结果。parser 做了显而易见且正确的事情，<code>NULL</code> 语义则直接来自标准 boolean logic。如果你非要说这是“bug”，那它属于 SQL 标准；Postgres 只是忠实实现了标准。</p>
+<h3>语法上的不对称：list vs subquery</h3>
+<p>list 和 subquery 的构建方式不同。list 形式是你刚看到的 <code>&lt;&gt; ALL</code> 不等式链。subquery 形式并不是 <code>&lt;&gt; ALL</code>：它会变成 <code>NOT (foo = ANY (subquery))</code>。形状不同，truth table 相同：比较中出现 <code>NULL</code> 会让结果变成 <code>unknown</code>，而 <code>unknown</code> 会输掉。Planner 看到的正是这个 <code>NOT (... = ANY ...)</code> 形状。</p>
+<h2>为什么 planner 救不了你</h2>
+<p>正确性问题还有一个 plan-shape 层面的孪生问题。看一下 planner 在 200,000 行 <code>orders</code> 和 1,000 行 <code>vip</code> 的大 schema 上如何处理三个相邻查询。</p>
+<p>首先是正向情况：对子查询使用 <code>IN</code>：</p>
+<pre><code class="language-sql">EXPLAIN (COSTS OFF) SELECT * FROM orders
+WHERE customer_id IN (SELECT customer_id FROM vip);
+</code></pre>
+<pre><code class="language-sql"> Hash Semi Join
+   Hash Cond: (orders.customer_id = vip.customer_id)
+   -&gt;  Seq Scan on orders
+   -&gt;  Hash
+         -&gt;  Seq Scan on vip
+</code></pre>
+<p>这是干净的 semi join。planner 把子查询提升为一等关系，选择 hash join，并且可以把它和查询中的其他关系自由重排。现在看自然的镜像：找出 customer 不是 VIP 的订单，先用 <code>NOT EXISTS</code> 写：</p>
+<pre><code class="language-sql">EXPLAIN (COSTS OFF) SELECT * FROM orders o
+WHERE NOT EXISTS (SELECT 1 FROM vip v WHERE v.customer_id = o.customer_id);
+</code></pre>
+<pre><code class="language-sql">                  QUERY PLAN
+----------------------------------------------
+ Hash Anti Join
+   Hash Cond: (o.customer_id = v.customer_id)
+   -&gt;  Seq Scan on orders o
+   -&gt;  Hash
+         -&gt;  Seq Scan on vip v
+</code></pre>
+<p>这是 hash anti join，也就是 semi join 的高效、对称 counterpart。现在把同样意图写成 <code>NOT IN</code>：</p>
+<pre><code class="language-sql">EXPLAIN (COSTS OFF) SELECT * FROM orders
+WHERE customer_id NOT IN (SELECT customer_id FROM vip);
+</code></pre>
+<pre><code class="language-sql">                          QUERY PLAN
+---------------------------------------------------------------
+ Seq Scan on orders
+   Filter: (NOT (ANY (customer_id = (hashed SubPlan 1).col1)))
+   SubPlan 1
+     -&gt;  Seq Scan on vip
+(4 rows)
+</code></pre>
+<p>完全没有 join。子查询塌缩成一个 opaque <code>SubPlan</code> filter，被挂在 sequential scan 上。语法里的 <code>NOT (... = ANY ...)</code> 形状就直接出现在 filter 里。</p>
+<p>这行 filter 的显示方式和版本有关。PostgreSQL 16 会打印更简短的 <code>Filter: (NOT (hashed SubPlan 1))</code>；后续版本改了 <code>EXPLAIN</code>，暴露出内部 comparison，也就是这里在 18.4 上展示的 <code>NOT (ANY (... = (hashed SubPlan 1).col1))</code>。底层 plan 在所有已发布版本里都是同一个 opaque subplan。</p>
+<p>最后两个 plan 的区别是结构性的，不是调参细节。<code>Hash Anti Join</code> 会从 inner relation 构建一个 hash table，然后把 outer relation 流式扫过一次；如果 inner 超出 <code>work_mem</code>，它可以分 batch 并 spill 到磁盘，同时不改变结果。<code>SubPlan</code> 不给 planner 这些能力。即使你在这里看到的是 <code>hashed</code> variant，它仍然是在 scan 上作为 filter 原地执行：不能在全局 join search 中重排，不能把 outer query 的 join clause 下推进去驱动 index scan，也没有 multi-batch spill 逻辑来应对 hashed set 比估计更大的情况。子查询不再是 optimizer 可以规划的关系，而变成 optimizer 必须调用的 opaque function，每个 outer row 调一次。这和 <a href="https://boringsql.com/posts/good-cte-bad-cte/">没有被 inline 的 CTE</a> 的 optimization fence 效果一样：planner 根本看不进去。小输入没人注意；大输入时，可能就是毫秒和分钟的区别。</p>
+<p>planner 被困在这个形状上的原因，正是前面的 <code>NULL</code> 语义。anti join 在找不到 match 时保留一行。但 <code>NOT IN</code> 在比较结果为 <code>unknown</code> 时必须丢弃一行，而 “unknown” 和 “no match” 不是同一回事。两者恰好在存在 <code>NULL</code> 时分歧，所以 planner 历史上无法证明这种 rewrite 安全，因此从不尝试。</p>
+<p>在已发布的 PostgreSQL 上，把列声明成 <code>NOT NULL</code> 也救不了你。作者在 18.4 上把 outer 和 inner 列都加了 <code>NOT NULL</code> 约束后重跑查询，plan 仍然是 opaque <code>SubPlan</code> filter。已发布的 planner 甚至不会看这些信息。所以 <code>NOT IN (subquery)</code> 从 Postgres 诞生以来一直是 correctness trap；自 8.4（2009）引入 anti join、其他 negated subquery 都学会使用 anti join 以来，它也一直是 planner pessimization。已发布 optimizer 两边都不会救你。</p>
+<h2>修复会在 PostgreSQL 19 落地</h2>
+<p>上一段终于快过时了。这是性能修复，不是语义修复：它拯救的是本来语义正确但计划很差的情况，也就是 <code>NOT NULL</code> 列仍卡在 opaque <code>SubPlan</code> 后面的场景；nullable 列仍然保持 SQL 标准规定的行为。作者在 development branch 里追踪到一个 released Postgres 里不存在的函数：<code>sublink_testexpr_is_not_nullable</code>，位于 <code>src/backend/optimizer/plan/subselect.c</code>。它守在 <code>convert_ANY_sublink_to_join</code> 里的一个全新分支前：</p>
+<pre><code class="language-sql">/*
+ * Per SQL spec, NOT IN is not ordinarily equivalent to an anti-join, so
+ * that by default we have to fail when under_not.  However, if we can
+ * prove that neither the outer query's expressions nor the sub-select's
+ * output columns can be NULL, and further that the operator itself cannot
+ * return NULL for non-null inputs, then the logic is identical and it's
+ * safe to convert NOT IN to an anti-join.
+ */
+if (under_not &amp;&amp;
+    (!sublink_testexpr_is_not_nullable(root, sublink) ||
+     !query_outputs_are_not_nullable(subselect)))
+    return NULL;
+</code></pre>
+<p><code>git blame</code> 显示它来自 commit <code>383eb21ebff</code>，标题是 “Convert NOT IN sublinks to anti-joins when safe”，由 Richard Guo 在 2026 年 3 月合入。它在 <code>master</code> 上，目标是 PostgreSQL 19。它不存在于任何 <code>REL_18</code> tag 中，这正解释了为什么作者的 18.4 环境即使列都是 <code>NOT NULL</code>，仍然产生 <code>SubPlan</code>。commit message 很直白地说明了交易条件：</p>
+<p>如果我们可以证明 comparison 两边都不会产生 <code>NULL</code>，并且 operator 本身也不会在非 NULL 输入上返回 NULL，那么 <code>NOT IN</code> 和 anti join 的行为就完全一致。</p>
+<p>这个证明必须建立三件事：</p>
+<ul>
+<li>
+<p>两个 operand 都可证明非 <code>NULL</code>。来自 schema 的 <code>NOT NULL</code> 约束（通过 NOT-NULL-attnums hash table）、outer join nullability tracking（所以 outer join nullable 侧的 <code>Var</code> 不算），以及强制某个 <code>Var</code> 非空的 qual clause。</p>
+</li>
+<li>
+<p>子查询输出列可证明非 <code>NULL</code>，也就是 guard 里的 <code>query_outputs_are_not_nullable</code> 部分。</p>
+</li>
+<li>
+<p>operator 是 <code>NULL</code> 安全的。operator 必须属于 B-tree 或 Hash operator family。这是“行为像普通 boolean comparison，且不会在非 NULL 输入上返回 <code>NULL</code>”的代理条件，因为一个会这样返回 <code>NULL</code> 的 operator 会破坏它声称支持的 index。</p>
+</li>
+</ul>
+<p>当三者都成立时，<code>NULL</code> 处理上的不匹配就消失了，<code>NOT IN</code> 终于可以变成 <code>JOIN_ANTI</code>：</p>
+<pre><code class="language-sql">result-&gt;jointype = under_not ? JOIN_ANTI : JOIN_SEMI;
+</code></pre>
+<p>这解除了一个自 anti join 在 8.4 中出现以来就存在的 planner 限制，但只在 planner 能证明没有 <code>NULL</code> 会进入 comparison 时才生效。如果你的列 nullable，那么 PostgreSQL 19 和 9.x 一样，你仍然待在老地方。语义没有变；optimizer 只是学会识别那些 <code>NULL</code> 可证明不存在的场景。</p>
+<h2>决策矩阵</h2>
+<table>
+<thead>
+<tr>
+<th>你写的形式</th>
+<th>内部形状</th>
+<th>右侧有 NULL</th>
+<th>左侧有 NULL</th>
+<th>Planner（≤ PG 18）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IN (1,2,3)</code></td>
+<td><code>= ANY</code>，一个 <code>OR</code></td>
+<td>被吸收，无害</td>
+<td>行被丢弃（无匹配）</td>
+<td><code>ScalarArrayOpExpr</code></td>
+</tr>
+<tr>
+<td><code>NOT IN (1,2,3)</code></td>
+<td><code>&lt;&gt; ALL</code>，一个 <code>AND</code></td>
+<td>所有行被丢弃</td>
+<td>行被丢弃</td>
+<td><code>ScalarArrayOpExpr</code></td>
+</tr>
+<tr>
+<td><code>IN (subquery)</code></td>
+<td><code>= ANY</code> sublink</td>
+<td>被吸收</td>
+<td>行被丢弃</td>
+<td>Semi Join</td>
+</tr>
+<tr>
+<td><code>NOT IN (subquery)</code></td>
+<td><code>NOT (= ANY)</code> sublink</td>
+<td>所有行被丢弃</td>
+<td>行被丢弃</td>
+<td>opaque <code>SubPlan</code> filter ¹</td>
+</tr>
+<tr>
+<td><code>NOT EXISTS (...)</code></td>
+<td>anti-join sublink</td>
+<td>行保留</td>
+<td>行保留</td>
+<td>Anti Join</td>
+</tr>
+</tbody>
+</table>
+<p>¹ PostgreSQL 19 会在 outer expression 和 subquery output column 都可证明 <code>NOT NULL</code> 时，把它提升为 Anti Join。</p>
+<h2>应该怎么写</h2>
+<p>不要等 PostgreSQL 19；等它发布后也不要依赖它。它只会在列可证明 <code>NOT NULL</code> 时触发。所有可移植修复都归结为一条规则：让 <code>NULL</code> 远离 <code>NOT IN</code>。实践中就是改写查询，优先顺序如下。</p>
+<p>默认使用 <code>NOT EXISTS</code>。把它变成习惯，你就不会再踩这个坑。它在所有版本上都有 anti-join 语义，也有原本正常 <code>NOT IN</code> 想要得到的 plan，无论列是否 nullable：</p>
+<pre><code class="language-sql">SELECT id, category_id FROM products p
+WHERE NOT EXISTS (
+    SELECT 1 FROM archived a WHERE a.category_id = p.category_id
+);
+</code></pre>
+<p>它会保留产品 3，也就是 <code>NULL</code> category，因为 <code>NOT EXISTS</code> 问的是是否存在匹配的 archived row，而不是 <code>category_id = NULL</code> 是否为 true。这通常是你真正想要的答案。如果你确实想把 <code>NULL</code> category 的行去掉，就显式加上 <code>AND p.category_id IS NOT NULL</code>，这样你是在有意做这个决定。</p>
+<p>当你必须保留 <code>NOT IN</code> 时，过滤掉子查询里的 <code>NULL</code>。比如生成查询时你只能编辑括号里的部分：</p>
+<pre><code class="language-sql">SELECT id FROM products
+WHERE category_id NOT IN (
+    SELECT category_id FROM archived WHERE category_id IS NOT NULL
+);
+</code></pre>
+<p>这只覆盖右侧 <code>NULL</code>，不处理左侧：产品 3 仍会消失，因为左侧 <code>NULL</code> 没变。只有在你不能用 <code>NOT EXISTS</code> 时才这么做。</p>
+<p>对于 whole-set comparison，可以使用 <code>EXCEPT</code>。它用 <code>IS NOT DISTINCT FROM</code> 匹配行，所以两个 <code>NULL</code> 会被视为相等，三值逻辑陷阱不会触发。但同样因为这个规则，如果 <code>archived</code> 里有 <code>NULL</code>，它会把 <code>products</code> 里的 <code>NULL</code> 行移除：</p>
+<pre><code class="language-sql">SELECT category_id FROM products
+EXCEPT
+SELECT category_id FROM archived;
+-- returns: {10}
+-- product 3 (NULL category) is dropped because archived also has a NULL
+</code></pre>
+<p>所以 <code>NOT EXISTS</code> 会保留产品 3，而 <code>EXCEPT</code> 会丢掉它。选择哪一个，取决于你真正想要的答案。</p></body>
+</html>

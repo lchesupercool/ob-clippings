@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-06-16-why-postgres-doesnt-have-remotereceive.zh</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>为什么 Postgres 没有 remote_receive —— 以及我尝试实现它之后发生了什么</h1>
+<p>Source: <a href="https://www.robins.in/2026/06/why-postgres-doesnt-have-remotereceive.html">https://www.robins.in/2026/06/why-postgres-doesnt-have-remotereceive.html</a><br />
+Author: Robins Tharakan<br />
+Published: June 15, 2026<br />
+Saved: 2026-06-16 14:31 +0800</p>
+<p>在分布式数据库环境里，如何在持久性和性能之间取得平衡，一直是一场拉锯战。PostgreSQL 的 <code>synchronous_commit</code> 参数正处在这个问题的核心位置：它给管理员一个旋钮，用来精确选择 <code>COMMIT</code> 在什么时候向客户端返回成功。</p>
+<p><code>remote_receive</code> 这个想法来自一个简单的问题：如果跳过 standby 上的磁盘写入，是否能带来可测量的、真实世界里的性能收益？如果只等待 WAL 字节到达 standby 的内存，而不是等待它进入 <code>remote_write</code> 所要求的位置，我们能否得到有意义的提升？我决定实现并 benchmark 这个特性来找出答案。</p>
+<p>接下来发生的是一段穿过网络延迟、OS page cache、CPU 调度器抖动以及 benchmark 噪声的旅程。下面是实现、测试、初始异常现象以及最终结果的拆解。</p>
+<hr />
+<h2>1. 这个特性：什么是 <code>remote_receive</code>？</h2>
+<p>在这个分支之前，PostgreSQL 提供了四种主要的同步提交模式：</p>
+<ul>
+<li><strong><code>off</code></strong>：完全异步。（最快，最不安全）</li>
+<li><strong><code>local</code></strong>：等待 primary 上的本地磁盘 flush。</li>
+<li><strong><code>remote_write</code></strong>：等待 standby 将 WAL 写入它的 OS buffer cache（<code>pwrite</code>）。</li>
+<li><strong><code>remote_apply</code></strong>：等待 standby 完整 replay WAL。（最慢，最安全）</li>
+</ul>
+<p><code>remote_receive</code> 正好位于 <code>local</code> 和 <code>remote_write</code> 之间。在这个模式下，primary 保证 WAL 字节已经物理到达 standby 的 <code>walreceiver</code> 进程 buffer。它<em>不会</em>等待 standby 调用 <code>pwrite()</code>。</p>
+<p><strong>假设：</strong>通过完全绕过 standby 的磁盘 I/O，<code>remote_receive</code> 应该比 <code>remote_write</code> 提供更低延迟和更高吞吐，尤其是在 replica 硬件磁盘较慢时。</p>
+<h3>实现细节</h3>
+<p>为了构建这个功能，我必须同时修改 standby 和 primary：</p>
+<ol>
+<li><strong>Standby 状态更新：</strong>我修改了 standby 发送给 primary 的 34 字节 wire message，增加了一个新的 8 字节 <code>receivePtr</code>（形成 42 字节消息，并保持向后兼容）。</li>
+<li><strong>提前回复：</strong>我修改了 <code>walreceiver.c</code>，让它在内存中收到 WAL chunk 后<em>立即</em>发送 reply message，发生在 <code>XLogWalRcvWrite()</code> 调用执行 <code>pg_pwrite</code> 之前。</li>
+<li><strong>Primary 等待逻辑：</strong>我更新了 <code>syncrep.c</code> 和 <code>walsender.c</code>，用于跟踪 <code>SYNC_REP_WAIT_RECEIVE</code> wait queue；一旦 standby 的 <code>receivePtr</code> 前进，就释放正在等待的 backend。</li>
+</ol>
+<hr />
+<h2>2. 场景 1：SSD 基线（快速 primary，快速 replica）</h2>
+<p>为了验证代码，我先用千兆 LAN 上的两台快速机器搭建了基线测试。</p>
+<p><strong>服务器：</strong></p>
+<ul>
+<li><strong>Primary:</strong> <code>lenovo</code>（Intel Core i7-12700 12C/20T，48GB RAM，NVMe SSD）</li>
+<li><strong>Replica:</strong> <code>camry</code>（Intel Core i7-4770 4C/8T，24GB RAM，SATA SSD）</li>
+</ul>
+<p>我使用 pgbench（Scale 10，4 clients）在不同模式下各运行 30 秒。</p>
+<p><strong>结果：</strong></p>
+<ul>
+<li><code>remote_write</code>：3,944 TPS（中位数）</li>
+<li><code>remote_receive</code>：3,946 TPS（中位数）</li>
+</ul>
+<p>性能几乎完全相同（差异为 0.06%）。为什么 <code>remote_receive</code> 没有领先？</p>
+<p><strong><code>pwrite()</code> 的现实：</strong>在有空闲 RAM 的现代操作系统上，对 buffered file 执行普通 <code>pwrite()</code> 并不会立刻写入物理磁盘。它会把数据复制到 OS page cache 中（本质上是一次只需要几微秒的内存拷贝），然后由内核异步 flush dirty pages。</p>
+<p>在千兆 LAN 上，网络 round-trip time（RTT）大约在 0.2ms 到 1.0ms 之间；绕过 <code>pwrite()</code> 省下来的 5 微秒会被网络延迟完全淹没。这使得 <code>remote_write</code> 和 <code>remote_receive</code> 在典型条件下表现几乎相同。</p>
+<p>这个基本事实解释了为什么 PostgreSQL core 开发者历史上会质疑 memory-only receive mode 的投入产出比（RoI）。因为普通 <code>pwrite()</code> 写入 OS page cache 已经是 RAM 速度的操作（只需要几微秒），所以在正常条件下，<code>remote_write</code> 实际上已经和任何只等待网络接收的模式一样快，但它还有一个重要的持久性优势：只要 OS 仍在运行，它可以在 standby 上的 PostgreSQL 进程崩溃后存活。绕过它会降低持久性，却不会在典型条件下提供任何真实世界的性能收益。在 pgsql-hackers 讨论中——例如引入独立 <code>write_lag</code> 和 <code>flush_lag</code> 跟踪的 <a href="https://www.postgresql.org/message-id/flat/CAEepm%3D2%3DjCZ35%2BmhRYE1yN%2BF97p5BYo%2BV%2BKx71Wu2xKaa3dQDg%40mail.gmail.com#234c830ffef92c855be4b7348d20ab54">Measuring Replay Lag</a> 线程——可以清楚看到，网络往返时间主导了复制 pipeline。要找到 receive-only 模式的可测量收益，我需要一个 replica，在那里磁盘 I/O 严重到足以成为瓶颈，造成 page cache 压力并拖慢 <code>pwrite()</code> 调用本身。</p>
+<hr />
+<h2>3. 场景 2：HDD 挑战（非对称硬件）</h2>
+<p>下一次测试中，我把快速的 <code>camry</code> replica 换成了一台弱得多的机器。</p>
+<p><strong>服务器：</strong></p>
+<ul>
+<li><strong>Primary:</strong> <code>lenovo</code>（i7-12700，SSD）</li>
+<li><strong>Replica:</strong> <code>mac</code>（Intel Core i5-2520M 2C/4T，16GB RAM，5400RPM HDD）</li>
+</ul>
+<p>由于使用机械硬盘和较慢的双核处理器，我原本预期 <code>remote_receive</code> 会超过 <code>remote_write</code>。我对每种模式运行了三次 30 秒测试，但初始结果出乎意料：</p>
+<p><strong>第一次（异常）结果：</strong></p>
+<ul>
+<li><code>remote_write</code>：203.6 TPS（中位数）</li>
+<li><code>remote_receive</code>：179.0 TPS（中位数）</li>
+</ul>
+<p><code>remote_write</code> 比 <code>remote_receive</code> 快了约 20 TPS。跟踪 <code>walreceiver</code> 和 <code>walsender</code> 循环排除了代码 bug；瓶颈最终来自四个因素：</p>
+<ol>
+<li><strong>OS cache 幻觉：</strong>即使在慢 HDD 上，<code>pwrite()</code> 仍然是写入 RAM。机械硬盘的极端延迟只会在 <code>fsync</code> 期间或 page cache 被填满时体现出来，这意味着 receive-only 的优势仍然很小。</li>
+<li><strong>CPU/调度器抖动：</strong>通过在写磁盘前发送“提前回复”，<code>remote_receive</code> 会产生两倍数量的 TCP reply packet（一次用于 receive，稍后一次用于 flush）。在 replica 那颗较老的双核 CPU 上，一边处理这些 packet 洪流，一边进行 WAL replay，会导致很高的 context-switching 开销。</li>
+<li><strong>流控：</strong><code>remote_write</code> 起到了天然的 flow-control 机制作用。它在回复前等待写入，从而轻微 throttle primary，让 replica 的 CPU 避免进入抖动状态。</li>
+<li><strong>统计噪声：</strong><code>remote_write</code> 的运行结果范围从 177 到 211 TPS（19% 的跨度）。3 次、每次 30 秒的测试实在太 noisy，无法得到可靠的中位数。</li>
+</ol>
+<blockquote>
+<p><strong>插曲：Raspberry Pi 4 尝试</strong>
+在最终选择 Mac Mini HDD 之前，我尝试使用 Raspberry Pi 4（<code>pi4</code> —— Cortex-A72 4C/4T，4GB RAM，SD card / USB storage）作为慢 replica。然而，Pi 4 并不适合这个 benchmark。主要问题不只是 CPU 打满，而是低功耗 ARM CPU 无法跟上 primary 更快的 WAL 生成速率。这个滞后会级联出次生问题——例如快速累积的 replication lag、TCP buffer queue、进程饥饿——这些因素完全主导了环境，并掩盖了任何 storage-level 的性能差异。</p>
+</blockquote>
+<hr />
+<h2>4. 最终测试：消除噪声</h2>
+<p>在初始运行中，慢机械硬盘与标准 kernel buffering 结合，产生了巨大的噪声来源：刚刚结束的测试留下的持续后台 I/O 写入，在下一次测试开始时仍然在 flush 到磁盘。虽然我已经有 LSN cross-check（等待 replica 的 <code>replay_lsn</code> 追上 primary 当前 WAL LSN），但这只能验证数据库层面的追平，并不能验证物理磁盘队列是否清空。OS cache 中残留的写队列会严重惩罚下一次运行，制造人为方差。为了隔离真正的复制性能并消除噪声，我彻底调整了 benchmark 方法：</p>
+<ol>
+<li><strong>交错运行：</strong>我交错执行测试（Write、Receive、Write、Receive……），以平均掉时间相关的后台 OS 任务和热状态。</li>
+<li><strong>更长运行和更多迭代：</strong>我对每种模式运行 10 次，每次 60 秒（总计 20 次运行）。</li>
+<li><strong>激进 cache flush：</strong>我在每次运行之间，在 primary 和 replica 上都执行 <code>sync</code>，随后 sleep 30 秒，以便把 OS page cache flush 到物理磁盘盘片，并确保磁盘队列干净。</li>
+</ol>
+<p><strong>最终结果：</strong></p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Median TPS</th>
+<th>Mean TPS</th>
+<th>Median Latency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>remote_write</code></td>
+<td>201.58</td>
+<td>200.74</td>
+<td>20.663 ms</td>
+</tr>
+<tr>
+<td><code>remote_receive</code></td>
+<td>211.44</td>
+<td>206.85</td>
+<td>19.434 ms</td>
+</tr>
+</tbody>
+</table>
+<h3>结果</h3>
+<p>在消除噪声并 flush 磁盘队列后，真实行为浮现出来：<strong><code>remote_receive</code> 确实优于 <code>remote_write</code></strong>，中位数上提升约 <strong>10 TPS（约 4.9%）</strong>，均值上提升约 <strong>6 TPS（约 3.0%）</strong>。这个差距很小，并且符合预期：绕过 replica 上的 RAM-buffered <code>pwrite()</code> 只能带来微秒级收益，而网络 round-trip time 仍然是主导因素。</p>
+<h2>结论</h2>
+<p><code>remote_receive</code> 实现成功引入了一种更细粒度的持久性选项：它保证 WAL 在提交前已经跨过网络进入 standby 的内存。</p>
+<p>这次实验强调了数据库 benchmark 的一个关键规则：<strong>OS page cache 会掩盖物理磁盘延迟，直到它被填满。</strong>要准确 benchmark 高方差存储，必须使用交错运行、更多迭代，以及在测试之间进行严格的 OS-level cache flush。否则，你测到的是 cache 行为和统计噪声，而不是原始数据库吞吐。</p>
+<hr />
+<p><em><strong>关于开发过程和资源的说明：</strong>虽然我偶尔会写 C 和 C++，但如果没有 AI 帮助，我不可能在 PostgreSQL internals 这个层级完成开发。此外，这个项目使用的所有资源——包括 Claude 订阅、开发机器、笔记本电脑和时间——都完全来自个人，与我的雇主完全无关。</em></p></body>
+</html>

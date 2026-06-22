@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-06-03-claude-code-dynamic-workflows</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>A harness for every task: dynamic workflows in Claude Code</h1>
+<blockquote>
+<p>来源: <a href="https://x.com/trq212/status/2061907337154367865">@trq212 on X</a>
+作者: Thariq Shihipar &amp; Sid Bidasaria (Anthropic, Claude Code team)
+日期: 2026-06-03</p>
+</blockquote>
+<hr />
+<h2>概述</h2>
+<p>Claude Code 发布了 <strong>dynamic workflows</strong>：Claude 可以动态编写自己的 harness (JavaScript 文件)，为特定任务量身定制执行框架。Workflows 可以分享和复用。</p>
+<p>注意：best practices 仍在发展中，dynamic workflows 通常消耗更多 tokens。</p>
+<h2>示例 Prompts</h2>
+<ul>
+<li>"This test fails maybe 1 in 50 runs. Set up a workflow to reproduce it, form theories and adversarially test them in worktrees /goal don't stop until one theory works."</li>
+<li>"Using a workflow, go through my last 50 sessions and mine them for corrections I keep making and turn the recurring ones into CLAUDE.md rules"</li>
+<li>"Use a workflow to dig through #incidents in Slack for the past six months and find recurring root causes where nobody has filed a ticket."</li>
+<li>"Take my business plan and run a workflow where different agents tear it apart from an investor's, a customer's, and a competitor's perspective."</li>
+<li>"Here's a folder of 80 resumes, use a workflow to rank them for the backend role and double-check the top ten."</li>
+<li>"I need a name for this CLI tool. Use a workflow to brainstorm a bunch of options and run a tournament to pick the top 3."</li>
+<li>"Go through my blog post draft and using a workflow verify every technical claim against the codebase, I don't want to ship anything wrong."</li>
+</ul>
+<h2>为什么需要 Dynamic Workflows</h2>
+<p>默认 Claude Code harness 在单个 context window 中同时规划和执行。长任务/大规模并行/对抗性任务中会出现三种失败模式：</p>
+<ol>
+<li><strong>Agentic laziness</strong> — Claude 在部分完成后就宣布任务结束（如 security review 只处理了 50 项中的 20 项）</li>
+<li><strong>Self-preferential bias</strong> — Claude 倾向偏好自己的结果，特别是被要求验证或评判自己的输出时</li>
+<li><strong>Context drift</strong> — 多轮对话后逐渐偏离原始目标，compaction 导致边缘约束丢失</li>
+</ol>
+<p>Workflows 通过编排多个独立的 Claude（各自拥有独立的 context window 和专注目标）来解决这些问题。</p>
+<h2>Dynamic vs Static Workflows</h2>
+<p>Static workflows (Agent SDK / <code>claude -p</code>) 需要考虑所有边缘情况，因此比较通用。Dynamic workflows 中 Claude 智能地为你的具体用例生成定制 harness。</p>
+<p>触发方式：直接让 Claude 创建 workflow，或使用关键词 <strong>"ultracode"</strong>。</p>
+<h2>常见 Workflow 模式</h2>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Classify-and-act</strong></td>
+<td>分类 agent 判断任务类型 → 路由到不同 agent</td>
+</tr>
+<tr>
+<td><strong>Fan-out-and-synthesize</strong></td>
+<td>拆分任务 → 并行 agent → 屏障合成结果</td>
+</tr>
+<tr>
+<td><strong>Adversarial verification</strong></td>
+<td>每个 agent 输出由另一个 agent 按 rubric 对抗性验证</td>
+</tr>
+<tr>
+<td><strong>Generate-and-filter</strong></td>
+<td>生成大量想法 → rubric 过滤/验证 → 去重 → 返回高质量结果</td>
+</tr>
+<tr>
+<td><strong>Tournament</strong></td>
+<td>N 个 agent 竞争，两两对比判定，选出胜者</td>
+</tr>
+<tr>
+<td><strong>Loop-until-condition</strong></td>
+<td>循环生成 agent 直到停止条件满足</td>
+</tr>
+</tbody>
+</table>
+<h2>使用场景</h2>
+<h3>Migrations &amp; Refactors</h3>
+<p>Zig → Rust 重写案例：分解为一系列步骤（callsites、failing tests、modules），每个 fix 在独立 worktree 中由 subagent 完成 → 对抗性 review → merge。</p>
+<h3>Deep Research</h3>
+<p>/deep-research skill：fan-out web searches → 抓取源 → 对抗性验证声明 → 合成带引用的报告。不限于 web search，也可用于 Slack 上下文、代码库深度探索等。</p>
+<h3>Deep Verification</h3>
+<p>验证报告中的每个事实声明：一个 agent 识别所有声明 → subagent 逐一检查 → verification agent 检查 source agent 质量。</p>
+<h3>Tournament Ranking</h3>
+<p>排序大量条目（如按严重程度排序 support tickets）：两两比较 agent pipeline（比较性判断比绝对评分更可靠），或 bucket-rank 并行后合并。</p>
+<h3>Memory &amp; Rule Adherence</h3>
+<p>Claude 容易遗漏的规则 → 创建 workflow，每个规则一个 verifier agent。反向：挖掘近期 session 中的修正 → 聚类 → 对抗性验证 → 提炼回 CLAUDE.md。</p>
+<h3>Root-Cause Investigation</h3>
+<p>从不相交的证据（logs/files/data）生成多个独立假设 → panel of verifiers and refuters。适用于代码、销售分析、数据工程、post-mortem。</p>
+<h3>Triaging at Scale</h3>
+<p>分类 → 去重（对比已有记录） → 执行（fix 或 escalate）。关键模式：<strong>quarantine</strong> — 读取不可信内容的 agent 被禁止高权限操作。</p>
+<h3>Exploration &amp; Taste</h3>
+<p>探索多种方案 → review agent 按 rubric 评估 → tournament 排序。也可用于评估和迭代 skill。</p>
+<h3>Model &amp; Intelligence Routing</h3>
+<p>Classifier agent 根据任务调研选择最佳模型（如 auth 模块的文件数决定用 Sonnet 还是 Opus）。</p>
+<h2>何时不用</h2>
+<ul>
+<li>常规 coding 任务通常不需要（不需要 5 reviewer panel）</li>
+<li>会增加 token 消耗</li>
+<li>问自己：真的需要更多 compute 吗？</li>
+</ul>
+<h2>使用技巧</h2>
+<ul>
+<li>详细 prompt + 具体技术描述效果最好</li>
+<li>不只是大任务，也可以用 "quick workflow" 做快速对抗性审查</li>
+<li>结合 <code>/goal</code> 和 <code>/loop</code>：可重复的 workflow 定时运行</li>
+<li>可设置 token budget：如 "use 10k tokens"</li>
+<li>保存：按 <code>s</code> 在 workflow 菜单保存，存入 <code>~/.claude/workflows</code> 或通过 skill 分发</li>
+</ul></body>
+</html>

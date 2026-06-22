@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-06-03-ai-native-engineering-org</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>Running an AI-native engineering org</h1>
+<blockquote>
+<p>来源: <a href="https://claude.com/blog/running-an-ai-native-engineering-org">Claude Blog</a>
+作者: Fiona Fung (Director of Engineering, Claude Code &amp; Claude Cowork)
+日期: 2026-06-03
+场合: Code w/ Claude SF 2026</p>
+</blockquote>
+<hr />
+<h2>The processes that quietly stopped working</h2>
+<p>For years, engineering bandwidth was the expensive part of building applications. Every process around software planning and shipping — first waterfall, then agile — was built around that cost.</p>
+<p>On the Claude Code team, writing code, writing tests, and refactoring rarely slows us down anymore. But the bottlenecks didn't go away when agentic coding took away the actual need to type code. <strong>Verification, code review, and security took their place.</strong></p>
+<p>Key questions now: Is this code correct? How is it maintained? How are humans keeping up with code reviews?</p>
+<h2>Planning: shift roadmaps to just in time</h2>
+<p>The old norm was spending a lot more time pre-planning because coding time was expensive. When Fiona joined the team, they wrote a 6-month roadmap — but because of Claude Code, so many things changed that it was out of date by month 3.</p>
+<p>New approach: <strong>JIT planning (Just-In-Time)</strong> — like JIT compiling, do just the right amount at the right time. Shifted from design docs to discussions in PRs or prototypes. No lengthy product reviews — prototype, get internal users on it, act on feedback.</p>
+<h2>Context gathering: ask Claude, not the author</h2>
+<p>Old norm: find the person who wrote the code. New norm: go deeper — what do you actually need to know? Ask Claude first, with data and context.</p>
+<p>Also, always ask: <strong>"Is there a way to automate it?"</strong> Fiona's example: summarizing customer feedback channels went from a manual coffee ritual to an automated background task.</p>
+<h2>Code review: trust but verify</h2>
+<p>Claude handles style/linting, PR feedback, bug catching, test additions. Humans stay for:
+- Legal review / risk tolerance
+- Trust boundaries and security-sensitive code
+- Product sense and taste</p>
+<p>The trust vs. verify balance <strong>keeps changing</strong> as models improve — continuously re-evaluate.</p>
+<h2>Team makeup: blurring roles</h2>
+<p>PMs code, engineers do content and design. Two profiles they hire for:
+1. <strong>Creative builders with product sense</strong> — dreamers passionate about shipping
+2. <strong>Engineers with deep systems expertise</strong> — for the "trust but verify" parts</p>
+<p>What they don't index on: raw throughput. "The more important question is where you still need human expertise."</p>
+<h2>Core team principles (non-negotiable)</h2>
+<ol>
+<li><strong>Relentlessly dogfood</strong>: Every team member uses Claude Code (and Claude Cowork)</li>
+<li><strong>Keep the team flat</strong>: Every manager starts as IC first, ships code, understands the engineer experience</li>
+<li><strong>Kill processes that no longer work</strong>: Explicit permission to question and remove obsolete processes</li>
+</ol>
+<p>Within these, each pod has autonomy on how to use Claude for triage, planning rituals, etc.</p>
+<h2>How to know new processes are sticking</h2>
+<p>Track three numbers:
+- <strong>Onboarding ramp time</strong> ↓ — engineers ship real code within first week
+- <strong>PR cycle time</strong> ↓ — might reveal where CI/build systems are struggling
+- <strong>Claude-assisted commits</strong> ↑ — by default every commit is Claude-assisted</p>
+<p>Don't confuse throughput with success. Throughput is one metric; the real metric is measuring the thing you're solving.</p>
+<h2>Getting started</h2>
+<blockquote>
+<p>Pick your noisiest workflow. Ask: is it still serving its purpose? If so, can you automate it?</p>
+</blockquote>
+<p>Fiona's story: a weekly review meeting with everyone on laptops, only looking up for status reports. One question — "Why are we having this meeting?" — killed it.</p></body>
+</html>

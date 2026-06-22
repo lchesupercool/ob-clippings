@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-05-16-how-to-become-a-hermes-agent-operator</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>How to Become a Hermes Agent Operator</h1>
+<p>Author: Shann³ (@shannholmberg)<br />
+Source: <a href="https://x.com/shannholmberg/status/2055335043904492011?s=52">https://x.com/shannholmberg/status/2055335043904492011?s=52</a><br />
+Saved: 2026-05-16 09:46:22 +0800</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/01.jpg" /></p>
+<p>How to Become a Hermes Agent Operator</p>
+<p>learn how to operate and master Hermes Agent. set up the agent control room template, configure specialist agents, and grow from one agent to a whole marketing company on one VPS.</p>
+<p>most AI tools answer questions. Hermes agent runs your workflows end-to-end.</p>
+<p>it navigates your browser, executes terminal commands, schedules cron jobs, monitors your inboxes, drafts the work, and posts the result to wherever you live: telegram, discord, slack, the email thread you're in right now.</p>
+<p>built by</p>
+<p>@NousResearch</p>
+<p>and it's open source with 150,000 github stars. Currently ranks #1 on OpenRouter for global token usage.</p>
+<p>its the framework I have built my entire marketing operation around for the past few weeks, and the article you are about to read is how I would set it up if I were starting today.</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/02.jpg" /></p>
+<h2>what you'll get from this article</h2>
+<p>what hermes agent is and why marketers (not just developers) should care</p>
+<p>the reader-friendly version of the architecture: the brain, the personality, the skillset, and how they all live in one folder</p>
+<p>the use cases I am personally running on hermes, with the four posts I have published about them</p>
+<p>the four-part mental model (you, control room, agents, optional task bus) and the four levels of setup, from "one agent on your laptop" to "a fully automated agent team on a VPS that you control from your phone"</p>
+<p>the prototype → production methodology I use to take a marketing workflow from messy idea to autonomous deployment</p>
+<p>the resources I would have wanted on day one: docs, the community atlas, the people to follow, the meetups happening right now</p>
+<p>the honest trade-offs and where this still breaks</p>
+<p>I am not selling you anything in this article. hermes is open source, Nous Portal has a free tier, and most of the community ecosystem is free too. fork, change, make it yours.</p>
+<h2>what hermes agent is</h2>
+<p>short version:</p>
+<p>an autonomous agent that gets more capable the longer it runs.</p>
+<p>longer version:</p>
+<p>hermes is a framework built by Nous Research that turns a model into a persistent operator. it has its own memory that survives between sessions. it writes its own skills as it works. it ships with 123 skills already built in (github workflows, obsidian, google workspace, linear, notion, typefully, perplexity, deep research, plus 100+ more). it lives wherever you put it, on your laptop, in a docker container, on a VPS, in a serverless runtime. and you can talk to it through 20+ surfaces: telegram, discord, slack, email, voice mode, or just your terminal.</p>
+<p>5月13日</p>
+<p>Hermes Agent changed how I work it's the highest leverage agent framework you can set up right now what makes it different: &gt; it routes tasks to the right model based on complexity and cost &gt; learns your voice and preferences over time &gt; handles context switching without</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/03.jpg" /></p>
+<p>5月10日</p>
+<p>1:51</p>
+<p>Nate Herk just wrote the most thorough Hermes Agent setup guide on the internet Here are 12 lessons you need to know before you build your own</p>
+<p>x.com/19216745449994…</p>
+<p>46</p>
+<p>97</p>
+<p>710</p>
+<p>24万</p>
+<p>if you have used claude code or openclaw, hermes is the same shape with a different philosophy.</p>
+<p>hermes is rails. opinionated defaults, batteries included, productive on day one with minimal setup, the agent does more thinking for you.</p>
+<p>openclaw is linux. primitives, guarantees, explicit control, the agent does exactly what you told it to and nothing more.</p>
+<p>both are valid. I run hermes because the bundled defaults compound. every project I start with hermes is one where the agent already knows how to do 100+ things before I write a line of configuration. that head start is worth it for me. I´ve also noticed that hermes doesn´t have where near the same issue with gateway disconnecting or bugging.</p>
+<p>proof is in the numbers Nous Research just hit:</p>
+<h1>1 on OpenRouter</h1>
+<p>for global token usage (out of every model and framework on the platform)</p>
+<p>150,000 github stars</p>
+<p>on the hermes repo</p>
+<p>123 bundled skills</p>
+<p>before the agent writes one of its own</p>
+<p>70+ built-in tools</p>
+<p>in the gateway, plus 300+ models through one subscription</p>
+<p>6 deployment targets</p>
+<p>: local, docker, ssh, daytona, singularity, modal</p>
+<p>20+ messaging surfaces</p>
+<p>: telegram, discord, slack, email, voice</p>
+<p>if you are an AI marketer and you have not started running hermes yet, you are leaving compounding capability on the table every week.</p>
+<h2>how it works (the reader-friendly version)</h2>
+<p>every hermes agent has three things.</p>
+<p>a brain.</p>
+<p>memory lives at ~/.hermes/memories/. two files, MEMORY.md and USER.md, inject at session start. your voice rubric, your brand notes, your customer language, last week's corrections, all of it loads before the first prompt. sessions are stored in sqlite, recall across sessions is full-text searchable.</p>
+<p>a personality.</p>
+<p>soul.md is where the vibe lives. concise. sarcastic. blunt. formal. fast or thoughtful. you can spin up six agents and give each one a different soul, same brain underneath. one is your outbound rep with a closer's energy. another is your researcher who likes long sentences. another is your assistant who keeps everything short.</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/04.jpg" /></p>
+<p>a skillset.</p>
+<p>123 skills out of the box: github PRs, obsidian, google workspace, linear, notion, typefully, perplexity, deep research, browser control, web scraping, vision, voice, scheduling. and the closed learning loop: as the agent works, it writes new skills along the way. your own skills library grows on top of the 123 without you having to write any of them.</p>
+<p>then there is what the agent can talk to.</p>
+<p>the</p>
+<p>tool gateway</p>
+<p>: one subscription, 300+ models, plus web scraping and browser automation built in</p>
+<p>MCP integration</p>
+<p>: any external service that speaks Model Context Protocol becomes a tool your agent can use</p>
+<p>20+ messaging surfaces</p>
+<p>: telegram, discord, slack, email, voice, plus the CLI itself</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/05.jpg" /></p>
+<p>and where the agent can live.</p>
+<p>your laptop (local)</p>
+<p>a docker container (isolated, portable, the way I run mine)</p>
+<p>an ssh session on a VPS (so it runs even when your laptop is closed)</p>
+<p>daytona, singularity, modal (serverless if you don't want to manage infrastructure)</p>
+<p>the closed learning loop is what makes this different from a smart chatbot. the agent watches itself work, writes new skills as it learns the shape of your work, refines its memory periodically, and recalls past context across sessions using a mix of full-text search and LLM summarization. you do not have to re-teach it next week.</p>
+<p>the rule I tell people new to hermes is this: do not try to write your own skills on day one. run real work, let the agent watch, and let the harness write the skills. you build a custom skill library faster by working than by writing prompts.</p>
+<h2>what I'm running on hermes</h2>
+<p>I am an AI marketer, not a coder. most of what I run on hermes is marketing infrastructure with the occasional internal tool. here is the actual list:</p>
+<p>a personal assistant</p>
+<p>that handles business and private, lives in telegram, flags the four emails worth reading every morning, schedules my reminders, summarizes meetings I missed</p>
+<p>a marketing workflow prototyping bench</p>
+<p>where I test new flows (lead magnet, ad creative review, content sprint) against real work for 2-3 runs before promoting them</p>
+<p>specialized marketing agents</p>
+<p>: SEO, outbound / BD, design review, content writing, each one with its own soul and its own scope</p>
+<p>a company brain</p>
+<p>that monitors slack, chats, emails, transcripts, voice memos, and makes all of it queryable. when I ask "what did we say to that client about pricing last month" I get the answer in 3 seconds instead of 30 minutes of digging</p>
+<p>an SEO agent</p>
+<p>that runs the full pipeline from keyword seed to published article in one docker container, 21 steps, no human in the middle until the final review</p>
+<p>a content distribution agent</p>
+<p>that takes a piece of long form (this article, for example) and atomizes it across LinkedIn, X, Threads, with platform-specific hooks</p>
+<p>an orchestrator agent</p>
+<p>that does not produce work itself, just routes requests to the right specialist based on what I'm asking for</p>
+<p>the blueprint I posted that summarized it:</p>
+<p>5月13日</p>
+<p>the org chart for my Hermes Agent company four layers, all isolated docker containers on one vps: 1. company brain - vision, brand, customers, products. the context every other layer inherits 2. orchestrator hermes agent - reads the company brain, picks the right department,</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/06.jpg" /></p>
+<p>5月13日</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/07.jpg" /></p>
+<p>Hermes Agent changed how I work it's the highest leverage agent framework you can set up right now what makes it different: &gt; it routes tasks to the right model based on complexity and cost &gt; learns your voice and preferences over time &gt; handles context switching without</p>
+<p>x.com/14559993134531…</p>
+<p>54</p>
+<p>108</p>
+<p>1,038</p>
+<p>13万</p>
+<p>the SEO agent in particular is worth zooming in on, because it is the one I have shipped publicly and the one that maps cleanest to the architecture in the rest of this article. five layers, all inside one docker container, 21 steps from keyword seed to published article.</p>
+<p>the 21 steps look like this in the terminal:</p>
+<p>[research + ideate]</p>
+<ul>
+<li>01 keyword seed</li>
+<li>02 serp snapshot</li>
+<li>03 competitor extraction</li>
+<li>04 intent + format analysis</li>
+<li>05 content + visual gap</li>
+<li>06 internal validation</li>
+<li>
+<p>07 external validation
+[production]</p>
+</li>
+<li>
+<p>08 angle + positioning brief</p>
+</li>
+<li>09 visual strategy brief</li>
+<li>10 outline</li>
+<li>11 draft</li>
+<li>12 image gen</li>
+<li>13 flowchart gen</li>
+<li>14 visual qa</li>
+<li>
+<p>15 article qa
+[distribution]</p>
+</li>
+<li>
+<p>16 publish prep</p>
+</li>
+<li>17 schema</li>
+<li>18 internal linking</li>
+<li>19 syndication</li>
+<li>20 analytics setup</li>
+<li>21 monitoring
+the layers above this pipeline:</li>
+</ul>
+<p>company brain</p>
+<p>at the top: vision, brand, audience, products. every agent reads from this</p>
+<p>orchestrator hermes agent</p>
+<p>: takes the topic or keyword seed and routes it to the seo agent</p>
+<p>seo brain</p>
+<p>: ranking playbook, voice rules, content formats, visual style guide, success criteria per format. all seo-specific context lives here</p>
+<p>three sub-agents</p>
+<p>inside the SEO agent, each one handling a phase:</p>
+<p>research + ideate</p>
+<p>: keyword seed, serp snapshot, competitor extraction, intent and format analysis, content and visual gap, internal and external validation</p>
+<p>production</p>
+<p>: angle and positioning brief, visual strategy brief, outline, draft, image gen, flowchart gen, visual and article qa</p>
+<p>distribution</p>
+<p>: publish prep, schema, internal linking, syndication, analytics, monitoring</p>
+<p>one docker container</p>
+<p>holds all three sub-agents. they share env, memory, and tools. sub-profiles switch context per phase. one process, one filesystem, one set of credentials.</p>
+<p>why one container instead of three: seo work is sequential. research feeds the brief, the brief feeds production, production feeds distribution. every step needs memory of what was decided upstream. splitting into three containers means shuttling state across boundaries, which gets expensive and breaks the chain.</p>
+<p>every other specialized agent in the company runs on the same template. clone the SEO agent template, swap the brain (seo brain → outbound brain, or → design brain, or → support brain), and you have a new agent for any function with the same five-layer shape.</p>
+<p>5月15日</p>
+<p>how my hermes seo agent works in the org chart it runs the full pipeline from keyword seed to published article, 21 steps, all inside one docker container the structure: LAYER 1: company brain shared context: vision, brand, audience, products. every agent reads from this</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/08.jpg" /></p>
+<p>5月13日</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/09.jpg" /></p>
+<p>the org chart for my Hermes Agent company four layers, all isolated docker containers on one vps: 1. company brain - vision, brand, customers, products. the context every other layer inherits 2. orchestrator hermes agent - reads the company brain, picks the right department,</p>
+<p>x.com/14559993134531…</p>
+<p>10</p>
+<p>14</p>
+<p>189</p>
+<p>1.4万</p>
+<p>the layers are not decoration. they are the reason the agent does not lose context as the work gets specialized. the company brain stays stable while the worker iterates. the brain layers make the worker disposable.</p>
+<p>I also hosted Nous Research at our</p>
+<p>@EspressioAI</p>
+<p>HQ in Lisbon for a Hermes Agent evening recently.</p>
+<p>@yeahfortommy</p>
+<p>from Nous ran a Q&amp;A, Simao from noticed .so showed an agent harness with autoresearch, and I walked through how we are using hermes for growth at Espressio.</p>
+<p>4月27日</p>
+<p>we are hosting</p>
+<p>@NousResearch</p>
+<p>for a Hermes Agent evening at the Espressio HQ tomorrow</p>
+<p>@touchgrassklub</p>
+<p>is organizing in collabration with Talent Protocol Here´s the agenda for the evening: &gt; I´ll start by talking about using Hermes Agent for growth, what we're shipping at</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/10.jpg" /></p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/11.jpg" /></p>
+<p>11</p>
+<p>4</p>
+<p>46</p>
+<p>if you are in Lisbon and want to come to the next one, I will post when it's scheduled.</p>
+<h2>from one agent to a full fleet</h2>
+<p>before the levels, the mental model.</p>
+<p>the setup has four parts:</p>
+<p>you</p>
+<p>are the operator. you have direct access to every part of the system.</p>
+<p>the</p>
+<p>agent control room</p>
+<p>is the side control plane. it is not an agent you chat through. it is a folder at /root/vps-agents that documents and governs the whole fleet. you open it, edit it, inspect it, or ask claude, codex, or hermes to use it when you are managing the system.</p>
+<p>the</p>
+<p>hermes agents</p>
+<p>are the workers. some are specialists (seo, dev, cmo, ops). one of them can optionally be an orchestrator.</p>
+<p>the</p>
+<p>agent task bus</p>
+<p>is an optional handoff desk that sits between the orchestrator and the specialists. you only need it once you have an orchestrator in play.</p>
+<p>the whole thing looks like this:</p>
+<p>┌───────┐</p>
+<p>│ YOU │ the operator</p>
+<p>└───┬───┘</p>
+<p>│</p>
+<p>┌─────────────────────────────┼─────────────────────────────┐</p>
+<p>│ │ │</p>
+<p>control path orchestrated path direct path</p>
+<p>│ │ │</p>
+<p>▼ ▼ ▼</p>
+<p>┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐</p>
+<p>│ AGENT CONTROL ROOM │ │ HERMES │ │ SPECIALIST AGENT │</p>
+<p>│ /root/vps-agents │ │ ORCHESTRATOR │ │ │</p>
+<p>│ │ │ (optional door) │ │ seo · dev · cmo · │</p>
+<p>│ docs · rules · │ └─────────┬──────────┘ │ ops · life │</p>
+<p>│ runbooks · env-map │ │ delegates │ │</p>
+<p>│ · registry │ ▼ │ talk to it │</p>
+<p>│ │ ┌────────────────────┐ │ directly, │</p>
+<p>│ side control plane │ │ AGENT TASK BUS │ │ no routing │</p>
+<p>│ no raw secrets │ │ /srv/agent-bus │ │ │</p>
+<p>│ │ └─────────┬──────────┘ │ │</p>
+<p>└────────────────────┘ │ │ │</p>
+<p>│ routes │ │</p>
+<p>└───────────────▶ │</p>
+<p>│ │</p>
+<p>└────────────────────┘</p>
+<p>the agent control room governs every agent in this diagram. it is the</p>
+<p>single source of truth, and the place you go to manage the fleet, not</p>
+<p>the place you go to run work through it.</p>
+<p>the storage split matters more than people think:</p>
+<p>/root/vps-agents → control room: docs, rules, runbooks, architecture</p>
+<p>no raw secrets, ever</p>
+<p>/srv/</p>
+<p>&lt;</p>
+<p>agent-name</p>
+<blockquote>
+<p>/data → live runtime: secrets, memory, skills, sessions, crons</p>
+</blockquote>
+<p>this is where each hermes agent lives</p>
+<p>the control room contains the answers to questions like which agents exist, what they do, what ports they use, what credentials they reference, what each agent can and cannot do, and how to restart, debug, or rebuild any of them. the live runtime contains the actual workings.</p>
+<p>the control room is the brain that defines the system. the live runtime is the body that runs it. you can rebuild the body from the brain. you cannot rebuild the brain from the body.</p>
+<p>inside the control room:</p>
+<p>/root/vps-agents/</p>
+<p>README.md</p>
+<p>CLAUDE.md</p>
+<p>agents/</p>
+<p>&lt;</p>
+<p>agent-name</p>
+<blockquote>
+<p>/</p>
+</blockquote>
+<p>inventory.md</p>
+<p>docker.md</p>
+<p>env-map.md</p>
+<p>runbook.md</p>
+<p>backup.md</p>
+<p>shared/</p>
+<p>security.md</p>
+<p>commands.md</p>
+<p>api-keys-sop.md</p>
+<p>orchestrator-and-fleet-skills.md</p>
+<p>and inside each agent's runtime at /srv/<agent-name>/data/:</p>
+<p>.env</p>
+<p>config.yaml</p>
+<p>SOUL.md</p>
+<p>memories/</p>
+<p>skills/</p>
+<p>cron/</p>
+<p>sessions/</p>
+<p>logs/</p>
+<p>state.db</p>
+<h2>three ways you interact</h2>
+<p>control path:</p>
+<p>you ──────► agent control room</p>
+<p>(add agents, rotate keys, update docs, debug setup)</p>
+<p>direct path:</p>
+<p>you ──────► hermes-seo-espressio</p>
+<p>(talk to a specialist directly, fastest)</p>
+<p>orchestrated path:</p>
+<p>you ──► hermes-orchestrator ──► task bus ──► specialists ──► you</p>
+<p>(one front door, routes and synthesizes multi-agent work)</p>
+<p>control path</p>
+<p>is the meta layer. used when adding agents, reviewing docs, checking ports, rotating keys, debugging setup.</p>
+<p>direct path</p>
+<p>is the fastest. used when you already know which agent does the work.</p>
+<p>orchestrated path</p>
+<p>is the synthesizer. used when you want one front door that routes and combines work across multiple specialists.</p>
+<h2>level 1: one agent</h2>
+<p>you have one hermes agent. that is it. the control room can still exist (recommended) but it only documents that one agent.</p>
+<p>you → one hermes agent</p>
+<p>control room → documents that one agent</p>
+<p>best for: initial setup, your personal hermes, root install documentation, simple docker migration.</p>
+<p>one agent, lived-in, with a personality you have tuned and a memory that has started to build. fill in SOUL.md with the voice you want, MEMORY.md with the stable facts about your business, and USER.md with the stable facts about you. connect it to telegram or discord so it lives where you do. start using it on real tasks. let it touch your tools. let it write its own skills along the way.</p>
+<p>MEMORY.md holds the stable facts (what your business is, who your customers are, what your products do). USER.md holds the stable facts about you (timezone, working hours, recurring projects, preferred output formats). both get refined every week as you correct the agent in real conversations.</p>
+<h2>level 2: direct specialist agents</h2>
+<p>you have multiple specialized agents, but you still talk to each one directly. no orchestrator yet.</p>
+<p>you → hermes-life</p>
+<p>you → hermes-seo-espressio</p>
+<p>you → hermes-dev</p>
+<p>you → hermes-cmo</p>
+<p>the control room documents all of them.</p>
+<p>best for: clear role separation, testing which agents are useful, avoiding premature orchestration, keeping credentials scoped per agent.</p>
+<p>the trap to avoid here is reaching for an orchestrator before you have proven your specialists are useful. spin up two or three, run them directly, and only add an orchestrator when you find yourself wanting one front door.</p>
+<p>when to spin up a new agent vs stay with what you have:</p>
+<p>needs its own credentials → new agent</p>
+<p>needs its own long-term memory → new agent</p>
+<p>ongoing repeated work that is a separate role → new agent</p>
+<p>otherwise stay with what you have</p>
+<p>bad pattern: one mega-agent with every credential and every memory layer mashed together. you lose isolation, you lose the ability to revoke access cleanly, and the agent gets confused about which voice to use.</p>
+<h2>level 3: orchestrator + specialists</h2>
+<p>you add hermes-orchestrator as a front door. you can still talk directly to specialists, but the orchestrator can route work and synthesize results.</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/12.jpg" /></p>
+<p>the orchestrator reads the control room to know which agents exist, what each one does, where task queues live, what requires approval, which actions are forbidden, and where docs and runbooks are. it does not need to ask you any of that, it reads it.</p>
+<p>best for: cross-functional work, delegation, summary and synthesis, one main interface for multi-agent workflows.</p>
+<p>the orchestrator is the moment your setup stops being a collection of agents and starts being a team. it is also the moment where the control room earns its keep, because the orchestrator is only as good as the docs it reads.</p>
+<p>what a quick check-in on the fleet looks like from my laptop or phone:</p>
+<p>$ ssh hermes</p>
+<p>welcome to hermes-vps-1.</p>
+<p>last login: thu may 15 09:14:22</p>
+<p>hermes-vps-1</p>
+<p>~</p>
+<p>$ cd vps-agents</p>
+<p>hermes-vps-1</p>
+<p>~</p>
+<p>/vps-agents $ docker ps --format \</p>
+<p>"table {{.Names}}\t{{.Status}}\t{{.Image}}"</p>
+<p>NAMES STATUS IMAGE</p>
+<p>hermes-orchestrator up 14 hours hermes-runtime</p>
+<p>hermes-seo-espressio up 8 hours hermes-runtime</p>
+<p>hermes-cmo up 8 hours hermes-runtime</p>
+<p>hermes-outbound up 4 hours hermes-runtime</p>
+<p>hermes-life up 12 hours hermes-runtime</p>
+<p>hermes-vps-1 ~/vps-agents $ cat agents/hermes-seo-espressio/runbook.md</p>
+<h1></h1>
+<p>runbook: hermes-seo-espressio</p>
+<p>restart: docker compose restart hermes-seo-espressio</p>
+<p>logs: docker logs -f hermes-seo-espressio</p>
+<p>shell: docker exec -it hermes-seo-espressio bash</p>
+<p>...</p>
+<p>5月13日</p>
+<p>my entire Hermes Agent setup is controlled from one folder on a VPS I can manage it from my laptop or phone in under 10 seconds, spin up isolated agents per project, and never lose context here's the full setup: &gt; bash command "ssh hermes" auto-connects to the VPS &gt; session</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/13.jpg" /></p>
+<p>5月13日</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/07.jpg" /></p>
+<p>Hermes Agent changed how I work it's the highest leverage agent framework you can set up right now what makes it different: &gt; it routes tasks to the right model based on complexity and cost &gt; learns your voice and preferences over time &gt; handles context switching without</p>
+<p>x.com/14559993134531…</p>
+<p>60</p>
+<p>121</p>
+<p>1,169</p>
+<p>9.7万</p>
+<h2>level 4: automated agent team</h2>
+<p>ame shape as level 3, but with recurring workflows and stronger automation. weekly seo reports run on cron. server health checks fire daily. backup verification runs without you asking. cross-agent business workflows kick off on schedule.</p>
+<p>best for: weekly seo reports, content operations, server health checks, backup verification, cross-agent business workflows.</p>
+<p>level 4 is what a marketing department in your terminal looks like. it does not need you to start the day. it shows up to work on its own, files reports, checks itself, and only pings you for the decisions that need taste.</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/14.png" /></p>
+<h2>the control hierarchy</h2>
+<p>one principle to keep in your head as you climb the levels.</p>
+<p>the control room is for config, docs, runbooks, and governance. it documents which agents exist, what they do, where they run, which credentials they reference, what each agent can and cannot do. it is the admin panel for the fleet, including the orchestrator. it is not where you go to do work.</p>
+<p>for work, you talk to the agents directly. either a specialist (when you know which agent owns the job) or the orchestrator (when you want one front door to route across specialists).</p>
+<h2>the setup guide: point your agent at the repo</h2>
+<p>now you understand the architecture. here is how you build it.</p>
+<p>I shipped a public template that holds the exact structure described above, plus the skills your agent needs to set it up for you.</p>
+<p>it lives at</p>
+<p>github.com/shannhk/hermes-agent-control-room</p>
+<p>.</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/15.jpg" /></p>
+<p>you can clone it manually, but the point is that you do not have to. if you have claude code or codex on your laptop, the agents do most of the work after you hand over a Hetzner API key.</p>
+<p>the automated flow:</p>
+<p>you ──► generate a Hetzner API key</p>
+<p>(5 min: sign up, generate a token, drop it in your .env)</p>
+<p>│</p>
+<p>▼</p>
+<p>agent ──► create-vps skill</p>
+<p>spins up a Hetzner box, generates an SSH key,</p>
+<p>writes the alias to ~/.ssh/config so</p>
+<p><code>ssh hermes</code></p>
+<p>works</p>
+<p>│</p>
+<p>▼</p>
+<p>agent ──► setup-control-room skill</p>
+<p>installs Node, Docker, Claude Code, Codex CLI,</p>
+<p>Hermes Agent, then clones the repo to the VPS</p>
+<p>at /root/agent-control-room</p>
+<p>│</p>
+<p>▼</p>
+<p>you ──► finish interactive auth on the VPS</p>
+<p>(claude /login, codex, hermes)</p>
+<p>│</p>
+<p>▼</p>
+<p>agent ──► agent-control-room skill</p>
+<p>registers your first hermes agent in the docs,</p>
+<p>fills in the runbook, sets up the env-map</p>
+<p>│</p>
+<p>▼</p>
+<p>you are at level 1 with a documented agent</p>
+<p>within ten to fifteen minutes you have:</p>
+<p>a fresh Hetzner VPS with the right tooling installed</p>
+<p>the control room cloned at /root/agent-control-room on the VPS</p>
+<p>the bundled skills linked into ~/.claude/skills on the VPS</p>
+<p>one hermes agent registered, runbook filled in, env-map written</p>
+<p>an SSH alias on your laptop so ssh hermes connects instantly</p>
+<h2>the prototype → production methodology</h2>
+<p>most workflows do not start as production ones. they start messy. a flow that runs SEO research, drafts an article, schedules it in Typefully, and posts it to LinkedIn does not exist in your head fully formed. you discover it by running it.</p>
+<p>hermes is the prototyping environment for this. here is the four-step path I use to take any new marketing workflow from idea to autonomous deployment:</p>
+<p>prototype in hermes</p>
+<p>. open your main hermes agent, describe what you want to happen, and let it try. it will get most of it wrong on the first run. that's fine.</p>
+<p>run it 2-3 times against real work</p>
+<p>, correcting drift each time. the harness watches every correction and starts writing the skill as it learns the shape. by run three the agent is doing most of what you want without coaching.</p>
+<p>fine-tune in a dedicated workspace</p>
+<p>. pull the workflow into a separate Claude Code workspace (or a fresh hermes agent if you prefer), tighten the prompts, lock the routing, add error handling, decide what should run on cron and what should be triggered.</p>
+<p>deploy to a VPS on a schedule</p>
+<p>. once it survives a week of real runs without you babysitting it, push it to its own docker container on your VPS, set the cron, walk away.</p>
+<p>I learned this pattern after burning a few weekends trying to write production-ready agents from scratch. you cannot write a production agent from scratch. you have to grow one. hermes makes the growing part fast.</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/16.png" /></p>
+<p>prototype in hermes</p>
+<p>fine-tune in a dedicated workspace</p>
+<p>deploy autonomous on a VPS</p>
+<h2>the models I run on hermes</h2>
+<p>hermes gives you the framework. the model underneath is your choice. through the tool gateway you can route to 300+ models from one subscription, switching per agent or per task.</p>
+<p>what I personally run today:</p>
+<p>claude opus 4.7</p>
+<p>for the creative work: copywriting, voice, hook generation, content drafting, anything where taste and writing quality matter</p>
+<p>codex (gpt 5.5)</p>
+<p>for the structured work: coding, planning, multi-step workflows, browser automation, scraping, anything where the steps need to be tight and the output predictable</p>
+<p>I run both. opus writes. codex builds and plans. hermes makes routing easy, you point each agent at the model that fits the work it does.</p>
+<p>if you can only run one, the answer depends on what kind of work your fleet is doing. heavy on content and copy? start with claude opus 4.7. heavy on infrastructure, automation, and engineering workflows? start with codex. you can always add the second model later through the same tool gateway.</p>
+<h2>honest trade-offs</h2>
+<p>I am not going to pretend hermes is perfect. three real trade-offs.</p>
+<ol>
+<li>the bundled defaults are also</li>
+</ol>
+<p>opinions.</p>
+<p>hermes</p>
+<p>ships with strong defaults for how memory works, how skills get written, how the agent uses tools. that is the whole pitch. but it also means if you want primitives with explicit control over every step, hermes will feel heavy. openclaw is the better fit for that taste. pick the tool that matches your philosophy.</p>
+<ol>
+<li>level 3 and 4 have a real learning curve.</li>
+</ol>
+<p>docker, VPS, SSH, the control room folder structure, the orchestrator skills, none of this is "install and go." you should not jump to level 3 if you are not already running hermes at level 1 daily.</p>
+<ol>
+<li>the model still</li>
+</ol>
+<p>matters.</p>
+<p>hermes</p>
+<p>is a framework that makes a good model great. it does not make a small model into a strategist. use the strongest models you can afford for the work that matters (your orchestrator, your strategy agent, your brain). drop to cheaper models for the work that does not (research scraping, draft generation, batch processing).</p>
+<p>none of this is magic. it is a framework that pays back because the memory persists, the skills accumulate, and the agents stay scoped. apply it to the wrong-sized model and you get a confused team. apply it to the right one and you get a team.</p>
+<h2>resources</h2>
+<p>if you are starting today, here is what I would read in order.</p>
+<p>the official docs</p>
+<p>:</p>
+<p>hermes-agent.nousresearch.com/docs</p>
+<p>. start with the install guide, then read the skills page so you understand what ships out of the box</p>
+<p>the control room template (my repo)</p>
+<p>:</p>
+<p>github.com/shannhk/hermes-agent-control-room</p>
+<p>. the exact structure I described above, ready to clone. control-room-first template for managing hermes agents from one VPS agent to specialist teams and orchestrated workflows. fork it and make it yours</p>
+<p>hermesatlas.com</p>
+<p>: the community-curated map of 100+ open source tools, plugins, workspaces, and integrations built on hermes. categorized by domain (memory providers, workspaces, skill registries, deployment, orchestration). also includes the Hermes Handbook, a beginner-friendly walkthrough. weekly updates, free newsletter</p>
+<p>@Teknium</p>
+<p>on X</p>
+<p>: Nous Research founder. ships hermes updates almost daily. the codex runtime integration, the DeepSeek V4 Flash free tier on Nous Portal, the pretext skills, all came through his feed first</p>
+<p>@NousResearch</p>
+<p>on X</p>
+<p>: the official account, official feature announcements</p>
+<p>the meetups</p>
+<p>: there are hermes meetups happening in person now (Lisbon, Ventura, more cities). worth showing up if there's one near you. you learn more in 90 minutes of side conversations than in a week of reading</p>
+<p><img alt="" src="../../assets/how-to-become-a-hermes-agent-operator/17.jpg" /></p>
+<p>Hope you got some value out of this, appreciate you reading the whole thing.</p>
+<p>-- Shann</p>
+<p>上午1:10 · 2026年5月16日</p>
+<p>813</p>
+<p>查看 9 条回复</p></body>
+</html>

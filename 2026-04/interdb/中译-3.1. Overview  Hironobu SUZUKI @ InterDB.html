@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>中译-3.1. Overview  Hironobu SUZUKI @ InterDB</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>3.1. 概述</h1>
+<p>在 PostgreSQL 中，虽然 9.6 版本中实现的 parallel query 使用了多个 background worker 进程，但基本上所有由已连接客户端发出的 query 都是由一个 backend 进程处理的。这个 backend 由五个子系统组成：</p>
+<ol>
+<li>Parser
+    parser 从纯文本的 SQL 语句生成 parse tree（语法分析树）。</li>
+<li>Analyzer/Analyser
+    analyzer/analyser 对 parse tree 进行语义分析，并生成 query tree（查询树）。</li>
+<li>Rewriter
+    如果存在相应的规则，rewriter 会使用 <code>rule system</code> 中存储的规则对 query tree 进行变换。</li>
+<li>Planner
+    planner 从 query tree 生成能够最有效执行的 plan tree（执行计划树）。</li>
+<li>Executor
+    executor 按照 plan tree 所构建的顺序访问表和索引，从而执行 query。</li>
+</ol>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-01.png" /></p>
+<p>图 3.1. Query Processing（查询处理）。</p>
+<p>本节将对上述子系统进行概述。由于 planner 和 executor 非常复杂，关于这两个功能的详细说明将在后续章节中给出。</p>
+<p>PostgreSQL 的 query processing 在 <code>official document</code> 中有详细描述。</p>
+<h2>3.1.1. Parser</h2>
+<p>parser 从纯文本的 SQL 语句生成一棵可由后续子系统读取的 parse tree。下面给出一个具体示例，不附带详细描述。</p>
+<p>让我们考虑下面所示的 query。</p>
+<pre><code class="language-sql">testdb=# SELECT id, data FROM tbl_a WHERE id &lt; 300 ORDER BY data;
+</code></pre>
+<p>parse tree 是一棵以 <code>parsenodes.h</code> 中定义的 SelectStmt 结构体为根节点的树。图 3.2(b) 展示了图 3.2(a) 中所示 query 的 parse tree。</p>
+<pre><code class="language-c">typedef struct SelectStmt
+{
+    NodeTag        type;
+
+    /*
+     * These fields are used only in &quot;leaf&quot; SelectStmts.
+     */
+    List       *distinctClause; /* NULL, list of DISTINCT ON exprs, or
+                                 * lcons(NIL,NIL) for all (SELECT DISTINCT) */
+    IntoClause *intoClause;        /* target for SELECT INTO */
+    List       *targetList;        /* the target list (of ResTarget) */
+    List       *fromClause;        /* the FROM clause */
+    Node       *whereClause;    /* WHERE qualification */
+    List       *groupClause;    /* GROUP BY clauses */
+    bool        groupDistinct;    /* Is this GROUP BY DISTINCT? */
+    Node       *havingClause;    /* HAVING conditional-expression */
+    List       *windowClause;    /* WINDOW window_name AS (...), ... */
+
+    /*
+     * In a &quot;leaf&quot; node representing a VALUES list, the above fields are all
+     * null, and instead this field is set.  Note that the elements of the
+     * sublists are just expressions, without ResTarget decoration. Also note
+     * that a list element can be DEFAULT (represented as a SetToDefault
+     * node), regardless of the context of the VALUES list. It's up to parse
+     * analysis to reject that where not valid.
+     */
+    List       *valuesLists;    /* untransformed list of expression lists */
+
+    /*
+     * These fields are used in both &quot;leaf&quot; SelectStmts and upper-level
+     * SelectStmts.
+     */
+    List       *sortClause;        /* sort clause (a list of SortBy's) */
+    Node       *limitOffset;    /* # of result tuples to skip */
+    Node       *limitCount;        /* # of result tuples to return */
+    LimitOption limitOption;    /* limit type */
+    List       *lockingClause;    /* FOR UPDATE (list of LockingClause's) */
+    WithClause *withClause;        /* WITH clause */
+
+    /*
+     * These fields are used only in upper-level SelectStmts.
+     */
+    SetOperation op;            /* type of set op */
+    bool        all;            /* ALL specified? */
+    struct SelectStmt *larg;    /* left child */
+    struct SelectStmt *rarg;    /* right child */
+    /* Eventually add fields for CORRESPONDING spec here */
+} SelectStmt;
+</code></pre>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-02.png" /></p>
+<p>图 3.2. parse tree 示例。</p>
+<p>SELECT query 的各个元素与 parse tree 中对应的元素使用相同的编号。例如 (1) 是第一个 target list 中的一项，对应表中的列 'id'；(4) 是 WHERE 子句；依此类推。</p>
+<p>parser 在生成 parse tree 时仅检查输入的语法。因此，只有当 query 中存在语法错误时，它才会返回错误。</p>
+<p>parser 并不检查输入 query 的语义。例如，即使 query 中包含一个并不存在的表名，parser 也不会返回错误。语义检查由 analyzer/analyser 负责完成。</p>
+<h2>3.1.2. Analyzer/Analyser</h2>
+<p>analyzer/analyser 对 parser 生成的 parse tree 运行语义分析，并生成一棵 query tree。</p>
+<p>query tree 的根是 <code>parsenodes.h</code> 中定义的 Query 结构体。这个结构体包含其对应 query 的元数据，比如命令类型（SELECT、INSERT 或其它），以及若干叶子。每个叶子形成一个列表或一棵子树，并保存对应某个特定子句的数据。</p>
+<pre><code class="language-c">/*
+ * Query -
+ *      Parse analysis turns all statements into a Query tree
+ *      for further processing by the rewriter and planner.
+ *
+ *      Utility statements (i.e. non-optimizable statements) have the
+ *      utilityStmt field set, and the rest of the Query is mostly dummy.
+ *
+ *      Planning converts a Query tree into a Plan tree headed by a PlannedStmt
+ *      node --- the Query structure is not used by the executor.
+ *
+ *      All the fields ignored for the query jumbling are not semantically
+ *      significant (such as alias names), as is ignored anything that can
+ *      be deduced from child nodes (else we'd just be double-hashing that
+ *      piece of information).
+ */
+typedef struct Query
+{
+    NodeTag        type;
+
+    CmdType        commandType;    /* select|insert|update|delete|merge|utility */
+
+    /* where did I come from? */
+    QuerySource querySource pg_node_attr(query_jumble_ignore);
+
+    /*
+     * query identifier (can be set by plugins); ignored for equal, as it
+     * might not be set; also not stored.  This is the result of the query
+     * jumble, hence ignored.
+     *
+     * We store this as a signed value as this is the form it's displayed to
+     * users in places such as EXPLAIN and pg_stat_statements.  Primarily this
+     * is done due to lack of an SQL type to represent the full range of
+     * uint64.
+     */
+    int64        queryId pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(0));
+
+    /* do I set the command result tag? */
+    bool        canSetTag pg_node_attr(query_jumble_ignore);
+
+    Node       *utilityStmt;    /* non-null if commandType == CMD_UTILITY */
+
+    /*
+     * rtable index of target relation for INSERT/UPDATE/DELETE/MERGE; 0 for
+     * SELECT.  This is ignored in the query jumble as unrelated to the
+     * compilation of the query ID.
+     */
+    int            resultRelation pg_node_attr(query_jumble_ignore);
+
+    /* has aggregates in tlist or havingQual */
+    bool        hasAggs pg_node_attr(query_jumble_ignore);
+    /* has window functions in tlist */
+    bool        hasWindowFuncs pg_node_attr(query_jumble_ignore);
+    /* has set-returning functions in tlist */
+    bool        hasTargetSRFs pg_node_attr(query_jumble_ignore);
+    /* has subquery SubLink */
+    bool        hasSubLinks pg_node_attr(query_jumble_ignore);
+    /* distinctClause is from DISTINCT ON */
+    bool        hasDistinctOn pg_node_attr(query_jumble_ignore);
+    /* WITH RECURSIVE was specified */
+    bool        hasRecursive pg_node_attr(query_jumble_ignore);
+    /* has INSERT/UPDATE/DELETE/MERGE in WITH */
+    bool        hasModifyingCTE pg_node_attr(query_jumble_ignore);
+    /* FOR [KEY] UPDATE/SHARE was specified */
+    bool        hasForUpdate pg_node_attr(query_jumble_ignore);
+    /* rewriter has applied some RLS policy */
+    bool        hasRowSecurity pg_node_attr(query_jumble_ignore);
+    /* parser has added an RTE_GROUP RTE */
+    bool        hasGroupRTE pg_node_attr(query_jumble_ignore);
+    /* is a RETURN statement */
+    bool        isReturn pg_node_attr(query_jumble_ignore);
+
+    List       *cteList;        /* WITH list (of CommonTableExpr's) */
+
+    List       *rtable;            /* list of range table entries */
+
+    /*
+     * list of RTEPermissionInfo nodes for the rtable entries having
+     * perminfoindex &gt; 0
+     */
+    List       *rteperminfos pg_node_attr(query_jumble_ignore);
+    FromExpr   *jointree;        /* table join tree (FROM and WHERE clauses);
+                                 * also USING clause for MERGE */
+
+    List       *mergeActionList;    /* list of actions for MERGE (only) */
+
+    /*
+     * rtable index of target relation for MERGE to pull data. Initially, this
+     * is the same as resultRelation, but after query rewriting, if the target
+     * relation is a trigger-updatable view, this is the index of the expanded
+     * view subquery, whereas resultRelation is the index of the target view.
+     */
+    int            mergeTargetRelation pg_node_attr(query_jumble_ignore);
+
+    /* join condition between source and target for MERGE */
+    Node       *mergeJoinCondition;
+
+    List       *targetList;        /* target list (of TargetEntry) */
+
+    /* OVERRIDING clause */
+    OverridingKind override pg_node_attr(query_jumble_ignore);
+
+    OnConflictExpr *onConflict; /* ON CONFLICT DO [NOTHING | UPDATE] */
+
+    /*
+     * The following three fields describe the contents of the RETURNING list
+     * for INSERT/UPDATE/DELETE/MERGE. returningOldAlias and returningNewAlias
+     * are the alias names for OLD and NEW, which may be user-supplied values,
+     * the defaults &quot;old&quot; and &quot;new&quot;, or NULL (if the default &quot;old&quot;/&quot;new&quot; is
+     * already in use as the alias for some other relation).
+     */
+    char       *returningOldAlias pg_node_attr(query_jumble_ignore);
+    char       *returningNewAlias pg_node_attr(query_jumble_ignore);
+    List       *returningList;    /* return-values list (of TargetEntry) */
+
+    List       *groupClause;    /* a list of SortGroupClause's */
+    bool        groupDistinct;    /* is the group by clause distinct? */
+
+    List       *groupingSets;    /* a list of GroupingSet's if present */
+
+    Node       *havingQual;        /* qualifications applied to groups */
+
+    List       *windowClause;    /* a list of WindowClause's */
+
+    List       *distinctClause; /* a list of SortGroupClause's */
+
+    List       *sortClause;        /* a list of SortGroupClause's */
+
+    Node       *limitOffset;    /* # of result tuples to skip (int8 expr) */
+    Node       *limitCount;        /* # of result tuples to return (int8 expr) */
+    LimitOption limitOption;    /* limit type */
+
+    List       *rowMarks;        /* a list of RowMarkClause's */
+
+    Node       *setOperations;    /* set-operation tree if this is top level of
+                                 * a UNION/INTERSECT/EXCEPT query */
+
+    /*
+     * A list of pg_constraint OIDs that the query depends on to be
+     * semantically valid
+     */
+    List       *constraintDeps pg_node_attr(query_jumble_ignore);
+
+    /* a list of WithCheckOption's (added during rewrite) */
+    List       *withCheckOptions pg_node_attr(query_jumble_ignore);
+
+    /*
+     * The following two fields identify the portion of the source text string
+     * containing this query.  They are typically only populated in top-level
+     * Queries, not in sub-queries.  When not set, they might both be zero, or
+     * both be -1 meaning &quot;unknown&quot;.
+     */
+    /* start location, or -1 if unknown */
+    ParseLoc    stmt_location;
+    /* length in bytes; 0 means &quot;rest of string&quot; */
+    ParseLoc    stmt_len pg_node_attr(query_jumble_ignore);
+} Query;
+</code></pre>
+<p>图 3.3 展示了上一小节图 3.2(a) 中所示 query 的 query tree。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-03.png" /></p>
+<p>图 3.3. query tree 示例。</p>
+<p>上面的 query tree 可以简要描述如下：</p>
+<ul>
+<li>targetlist 是该 query 结果中包含的列的列表。在这个例子中，该列表由两列组成：'id' 和 'data'。如果输入的 query tree 使用 ' <strong>∗ $∗$ $\ast$</strong> '（星号），analyzer/analyser 会显式地将其替换为所有列。</li>
+<li>range table 是该 query 中所用到的关系（relation）的列表。在这个例子中，该列表保存了表 'tbl_a' 的信息，比如该表的 <em>OID</em> 和表名。</li>
+<li>join tree 存储 FROM 子句和 WHERE 子句。</li>
+<li>sort clause 是 SortGroupClause 的列表。</li>
+</ul>
+<p>query tree 的细节详见 <code>official document</code>。</p>
+<h2>3.1.3. Rewriter</h2>
+<p>rewriter 是实现 <code>rule system</code> 的系统。如有必要，它会根据存储在 <code>pg_rules</code> 系统目录中的规则对 query tree 进行变换。rule system 本身就是一个很有意思的系统，但为了避免本章篇幅过长，关于 rule system 和 rewriter 的描述在此省略。</p>
+<p>View</p>
+<p>PostgreSQL 中的 <code>Views</code> 是通过 rule system 实现的。当使用 <code>CREATE VIEW</code> 命令定义一个 view 时，对应的规则会自动生成并存储到目录中。</p>
+<p>假设已经定义了下面这个 view，并且对应的规则已经存储在 <code>pg_rules</code> 系统目录中：</p>
+<pre><code class="language-sql">sampledb=# CREATE VIEW employees_list
+sampledb-#      AS SELECT e.id, e.name, d.name AS department
+sampledb-#            FROM employees AS e, departments AS d WHERE e.department_id = d.id;
+</code></pre>
+<p>当发出下面这条包含 view 的 query 时，parser 会创建如图 3.4(a) 所示的 parse tree。</p>
+<pre><code class="language-sql">sampledb=# SELECT * FROM employees_list;
+</code></pre>
+<p>在这个阶段，rewriter 会将 range table 节点处理为 <em>pg_rules</em> 中存储的那段子 query（即该 view 对应的子查询）的 parse tree。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-04.png" /></p>
+<p>图 3.4. rewriter 阶段示例。</p>
+<p>由于 PostgreSQL 使用这种机制实现 view，所以在 9.2 版本之前，view 是不可更新的。不过，从 9.3 版本开始 view 是可以更新的；尽管如此，在更新 view 时仍然有许多限制。相关细节在 <code>official document</code> 中有描述。</p>
+<h2>3.1.4. Planner 与 Executor</h2>
+<p>planner 从 rewriter 接收 query tree，并生成一棵可以被 executor 最有效处理的 (query) plan tree。</p>
+<p>PostgreSQL 中的 planner 基于纯粹的基于成本（cost-based）的优化。它不支持基于规则（rule-based）的优化或 hint。这个 planner 是 PostgreSQL 中最复杂的子系统。因此，本章后续章节将对 planner 进行概述。</p>
+<p>PostgreSQL 不支持 SQL 中的 planner hint，并且永远不会支持。如果要在 query 中使用 hint，可以考虑安装 <code>pg_hint_plan</code> 扩展。</p>
+<p>与其他 RDBMS 一样，PostgreSQL 中的 <code>EXPLAIN</code> 命令会显示 plan tree 本身。下面给出一个具体示例：</p>
+<pre><code class="language-sql">testdb=# EXPLAIN SELECT * FROM tbl_a WHERE id &lt; 300 ORDER BY data;
+                          QUERY PLAN
+---------------------------------------------------------------
+ Sort  (cost=182.34..183.09 rows=300 width=8)
+   Sort Key: data
+   -&gt;  Seq Scan on tbl_a  (cost=0.00..170.00 rows=300 width=8)
+         Filter: (id &lt; 300)
+rows
+</code></pre>
+<p>该结果所展示的 plan tree 如图 3.5 所示。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-05.png" /></p>
+<p>图 3.5. 一棵简单的 plan tree，以及该 plan tree 与 EXPLAIN 命令结果之间的关系。</p>
+<p>plan tree 由被称为 <em>plan nodes</em> 的元素组成，并连接到 <em>PlannedStmt</em> 结构体的 plantree 列表上。这些元素在 <code>plannodes.h</code> 中定义。详细内容将在 <code>Section 3.3.3</code> （以及 <code>Section 3.5.4.2</code> ）中说明。</p>
+<p>每个 plan node 都包含 executor 在处理时所需的信息。在单表 query 的情况下，executor 从 plan tree 的末端向根节点方向进行处理。</p>
+<p>例如，图 3.5 中所示的 plan tree 是一个由 sort node 和 sequential scan node 组成的列表。因此，executor 会先通过 sequential scan 扫描表 <em>tbl_a</em>，然后对所得到的结果进行排序。</p>
+<p>executor 通过 <code>Chapter 8</code> 中所描述的 buffer manager，对数据库集群中的表和索引进行读写操作。在处理 query 时，executor 会使用一些预先分配好的内存区域，例如 temp_buffers 和 work_mem，并在必要时创建临时文件。</p>
+<p>此外，在访问 tuple 时，PostgreSQL 使用并发控制机制来保持正在运行的事务的一致性和隔离性。并发控制机制在 <code>Chapter 5</code> 中进行了描述。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-06.png" /></p>
+<p>图 3.6. executor、buffer manager 与临时文件之间的关系。</p></body>
+</html>

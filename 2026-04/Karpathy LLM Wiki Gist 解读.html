@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Karpathy LLM Wiki Gist 解读</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><blockquote>
+<p>Karpathy有没有给出对应的 git</p>
+</blockquote>
+<hr />
+<p>找到了。Karpathy 发了一个 <strong>GitHub Gist</strong>，不是完整 repo：</p>
+<p>有。Karpathy 发了一个 <strong>GitHub Gist</strong>：</p>
+<p><strong>https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f</strong></p>
+<p>2788 stars，532 forks。不是一个完整 repo，而是一个名为 <code>llm-wiki.md</code> 的 idea 文件，设计成直接复制给你的 LLM Agent（Claude Code / Codex 等），让它帮你搭建知识库。</p>
+<h1>核心架构（三层）</h1>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Raw Sources</strong></td>
+<td>不可变的原始文档（文章、论文、图片），LLM 只读不改</td>
+</tr>
+<tr>
+<td><strong>Wiki</strong></td>
+<td>LLM 拥有和维护的 markdown 目录，包含摘要、实体页、概念页、对比、综述</td>
+</tr>
+<tr>
+<td><strong>Schema</strong></td>
+<td>CLAUDE.md / AGENTS.md，告诉 LLM wiki 的结构约定和工作流</td>
+</tr>
+</tbody>
+</table>
+<h1>四个操作</h1>
+<ol>
+<li><strong>Ingest</strong> — 放入新源文件，LLM 读取 → 写摘要 → 更新索引 → 更新相关实体/概念页（一个源可能触及 10-15 个页面）</li>
+<li><strong>Query</strong> — 对 wiki 提问，LLM 搜索相关页面合成答案。好的答案可以<strong>回填到 wiki</strong> 形成复利</li>
+<li><strong>Lint</strong> — 健康检查：矛盾检测、过时声明、孤立页面、缺失交叉引用、数据缺口</li>
+<li><strong>索引 + 日志</strong> — <code>index.md</code>（内容目录）+ <code>log.md</code>（时间线记录）</li>
+</ol>
+<h1>社区衍生工具</h1>
+<p>评论区出了不少实现：
+- <a href="https://github.com/Astro-Han/karpathy-llm-wiki">Astro-Han/karpathy-llm-wiki</a> — 一键安装的 Claude Code skill
+- <a href="https://github.com/pedronauck/skills/tree/main/skills/karpathy-kb">pedronauck/skills/karpathy-kb</a> — skill 实现
+- <a href="https://github.com/xoai">sage-wiki</a> — Go 单二进制实现，含 MCP server
+- <a href="https://github.com/fakechris/obsidian_vault_pipeline">fakechris/obsidian_vault_pipeline</a> — AutoPilot 自动维护</p>
+<p>这个模式跟你的 Obsidian vault 天然契合。要保存到 vault 或者试着搭一个吗？</p></body>
+</html>

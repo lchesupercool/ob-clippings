@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-05-05-how-are-committers-selected</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>How are committers selected?</h1>
+<p>At a couple recent conferences, I got to describe the process Postgres uses to select new committers/maintainers. Usually to users and developers using Postgres, but in some cases it was unclear even to experienced Postgres contributors.</p>
+<p>The <a href="https://www.postgresql.org/developer/committers/">official docs</a> are rather brief, and don’t explain various important details. Let me explain how I understand the informal process, who’s responsible for what etc.</p>
+<p>This post is not meant to give you advice on how to become a committer, that’s a far more subjective question. Perhaps in some future post, not sure yet.</p>
+<p>The official docs describe the process of adding committers like this:</p>
+<blockquote>
+<p>New Committers and Removing Committers</p>
+<p>New committers are added approximately annually after discussions and vote among the existing committers. Contributors to PostgreSQL are selected to be committers based on the following loose criteria:</p>
+<ul>
+<li>several years of substantial contributions to the project</li>
+<li>multiple and continuing code contributions</li>
+<li>responsibility for maintenance of one or more areas of the codebase</li>
+<li>track record of reviewing and helping other contributors with their patches</li>
+<li>high quality code contributions which require very little revision or correction for commit</li>
+<li>demonstrated understanding of the process and criteria for patch acceptance</li>
+</ul>
+<p>Generally, new committers are selected in March to April and announced on the Hackers mailing list.</p>
+<p>Committers who have become inactive and have not contributed significantly to the PostgreSQL project in several years are removed as committers. Again, the review process for this is approximately annual.
+</p>
+</blockquote>
+<p>All of this is generally correct. But it does not go into details about how it’s actually done, who participates in the selection. That’s not a coincidence - the process is quite informal, so much that it’s even really written down anywhere and evolves over time.</p>
+<h2>Who does it?</h2>
+<p>Initially, the selection was managed by the <a href="https://www.postgresql.org/developer/core/">core team</a>, a relatively small group of people entrusted by the community to oversee various aspects of the project. The core team is something like a steering committee or a board of directors, responsible for managing project resources, etc.</p>
+<p>The core team discussed who might be a good candidate. If there was an agreement, the commit bit was offered to that person. And if the person agreed, an announcement was made, and the various steps were done (adding SSH keys, …).</p>
+<p>At some point, most of this was delegated to all committers, a much larger group of people (currently ~30). I believe this changed for practical and “ideological” reasons.</p>
+<p>Practical, because the primary question is “Does the candidate contribute good code?” and committers seem closer to this than the core team. At least in principle, because most of the core team are committers too.</p>
+<p>Ideological, because it’s a part of a wider effort to delegate various core team responsibilities to other groups. Not just to save time for the core team, but also to delegate stuff to a wider and more diverse group of qualified people. More democracy &amp; meritocracy.</p>
+<p>The current process works roughly like this:</p>
+<ul>
+<li>Sometime in February - March, someone starts a thread on a private committer mailing list, asking others to suggest candidates.</li>
+<li>People suggest candidates they think are ready to be a committer, or might be ready next year with some guidance.</li>
+<li>A discussion follows. People agree or disagree with the proposal, explain why, share their experiences from collaborating with the candidate, etc.</li>
+<li>In the end there’s some sort of general agreement on who is ready to become a committer, which candidates may need guidance to be ready next year, etc.</li>
+<li>The list is passed to the core team, one of the core team members reaches out to the selected candidates and offers the commit bit. If the candidate agrees, an announcement is made and the new committer is given commit access.</li>
+<li>This process usually wraps mid-May. It used to be tied to PgCon, as the “main” conference, but I believe it’s no longer the case.</li>
+</ul>
+<p>The core team can overrule the list in either direction, i.e. reject some of the candidates, or add someone. I don’t think that ever happened, though. Most of the core team are committers too, so they could voice their objections from that position.</p>
+<p>What does “becoming a committer” mean in practice?</p>
+<p>You get your SSH key added to the <a href="https://wiki.postgresql.org/wiki/Committing_with_Git">official git repository</a>, so that you can push changes to it. You gets added to a private mailing list, used to discuss organizational stuff. Technical stuff is still discussed in the open on <a href="https://www.postgresql.org/list/pgsql-hackers/">pgsql-hackers</a>, though. Committers also have an option to request access to a couple internal tools. That’s about it.</p>
+<p>Committers don’t have special privileges or “secret backchannels” unavailable to regular contributors.</p>
+<p>What about the candidates that didn’t quite make it? There is an effort to give them enough feedback and help so that they can focus on that, and hopefully succeed the following year.</p>
+<h2>What are the criteria?</h2>
+<p>As the official docs say, the criteria a candidate should meet are somewhat loose. The technical criteria should be pretty understandable and reasonable, though.</p>
+<p>Maintainership requires sufficient expertise. A committer is expected to be a long-term contributor with multiple non-trivial patches. The patches need to be sufficiently close to “ready for commit” with only minimal tweaks necessary.</p>
+<p>A committer needs to understand the general community processes. A fair amount of “soft skills” required. Our development tends to be consensus-driven, so the ability to collaborate and deal with disagreement is crucial.</p>
+<p>Committers are also expected to help other contributors with their patches - by doing reviews, but not just that. Not only to get the features, but to grow the next generation of contributors and (eventually) maintainers.</p>
+<h2>Conclusion</h2>
+<p>So that’s how the process of picking new committers currently works. It’s merely a description of the process, I’m not claiming it’s perfect or that we couldn’t do better in various other ways.</p>
+<p>There’s a very active ongoing discussion on how to help more contributors to meet the criteria. The <a href="https://rhaas.blogspot.com/2026/03/hacking-workshop-for-aprilmay-2026.html">hacking workshops</a> and <a href="https://rhaas.blogspot.com/2025/03/mentoring-applications-and-hacking.html">mentoring program</a> are part of this effort. I might write about these challenges in the future, along with the stuff candidates tend to get rejected for.</p>
+<p>Hopefully, this made the committer selection a bit clearer. But if you still have questions, feel free to shoot me an e-mail.</p>
+<hr />
+<p>Source: <a href="https://vondra.me/posts/how-are-committers-selected/">How are committers selected?</a></p></body>
+</html>

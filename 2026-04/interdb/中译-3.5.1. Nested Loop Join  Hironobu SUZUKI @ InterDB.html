@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>中译-3.5.1. Nested Loop Join  Hironobu SUZUKI @ InterDB</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>3.5.1. Nested Loop Join</h1>
+<p>Nested loop join 是最基础的 join 操作，可用于所有 join 条件。PostgreSQL 支持 nested loop join 以及它的五种变体。</p>
+<h2>3.5.1.1. Nested Loop Join</h2>
+<p>Nested loop join 不需要任何启动操作，因此 start-up cost 为 0：</p>
+<p>$$
+'\text{start}-\text{up cost}' = 0.
+$$</p>
+<p>Nested loop join 的 run cost 与 outer 表和 inner 表的大小之积成正比。换句话说，'run cost' $‘run cost’$ $\text{‘run cost’}$ 为 O(Nouter×Ninner) $O(Nouter×Ninner)$ $O(N_{outer} \times N_{inner})$，其中 Nouter $Nouter$ $N_{outer}$ 和 Ninner $Ninner$ $N_{inner}$ 分别为 outer 表和 inner 表的 tuple 数量。更准确地说，run cost 由以下公式定义：</p>
+<p>$$
+'\text{run cost}' = \left(\right. \text{cpu}<em>\text{operator}</em>\text{cost} + \text{cpu}<em>\text{tuple}</em>\text{cost} \left.\right) \times N_{o u t e r} \times N_{i n n e r} + C_{i n n e r} \times N_{o u t e r} + C_{o u t e r}
+$$</p>
+<p>其中 Couter $Couter$ $C_{outer}$ 和 Cinner $Cinner$ $C_{inner}$ 分别为 outer 表和 inner 表的扫描 cost。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/05/fig-3-19.png" /></p>
+<p>图 3.19. Nested loop join。</p>
+<p>Nested loop join 的 cost 总是会被估算，但这种 join 操作很少被实际采用，因为下文描述的更高效的变体通常会被使用。</p>
+<h2>3.5.1.2. Materialized Nested Loop Join</h2>
+<p>上面描述的 nested loop join 每读取一条 outer 表的 tuple，都必须扫描 inner 表的全部 tuple。由于为每条 outer 表 tuple 都扫描整个 inner 表是一个代价很高的过程，PostgreSQL 支持 <em>materialized nested loop join</em>，用以降低 inner 表的总扫描 cost。</p>
+<p>在运行 nested loop join 之前，executor 会使用下文所述的 <em>temporary tuple storage</em> 模块对 inner 表进行一次扫描，将 inner 表的 tuple 写入 work_mem 或临时文件中。</p>
+<p>这可能比使用 buffer manager 更高效地处理 inner 表的 tuple，尤其是当所有 tuple 至少都能被写入 work_mem 时。</p>
+<p>图 3.20 说明了 materialized nested loop join 如何执行。对 materialized tuple 的扫描在内部被称为 <strong>rescan</strong>。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/05/fig-3-20.png" /></p>
+<p>图 3.20. Materialized nested loop join。</p>
+<p>PostgreSQL 内部提供了一个 temporary tuple storage 模块，用于 materialize 表、在 hybrid hash join 中创建 batch 等等。该模块由定义在 <code>tuplestore.c</code> 中的函数组成，它们在 work_mem 或临时文件中存取一段 tuple 序列。使用 work_mem 还是临时文件的决策取决于待存储 tuple 的总大小。</p>
+<p>下面我们通过一个具体的示例来探索 executor 如何处理 materialized nested loop join 的 plan tree，以及 cost 是如何估算的。</p>
+<pre><code class="language-sql">testdb=# EXPLAIN SELECT * FROM tbl_a AS a, tbl_b AS b WHERE a.id = b.id;
+                              QUERY PLAN
+-----------------------------------------------------------------------
+ Nested Loop  (cost=0.00..750230.50 rows=5000 width=16)
+   Join Filter: (a.id = b.id)
+   -&gt;  Seq Scan on tbl_a a  (cost=0.00..145.00 rows=10000 width=8)
+   -&gt;  Materialize  (cost=0.00..98.00 rows=5000 width=8)
+         -&gt;  Seq Scan on tbl_b b  (cost=0.00..73.00 rows=5000 width=8)
+rows
+</code></pre>
+<p>首先展示 executor 的操作。Executor 按如下方式处理所显示的 plan 节点：</p>
+<ul>
+<li><strong>第 7 行</strong>：Executor 通过顺序扫描（第 8 行）materialize inner 表 tbl_b。</li>
+<li><strong>第 4 行</strong>：Executor 执行 nested loop join 操作；outer 表为 tbl_a，inner 表为已 materialize 的 tbl_b。</li>
+</ul>
+<p>接下来估算 'Materialize'（第 7 行）和 'Nested Loop'（第 4 行）操作的 cost。假设 materialize 后的 inner tuple 被存储在 work_mem 中。</p>
+<h3>Materialize:</h3>
+<p>启动没有 cost，因此 start-up cost 为 0。</p>
+<p>$$
+'\text{start}-\text{up cost}' = 0
+$$</p>
+<p>Run cost 由以下公式定义：</p>
+<p>$$
+'\text{run cost}' = 2 \times \text{cpu}<em>\text{operator}</em>\text{cost} \times N_{i n n e r}
+$$</p>
+<p>因此，</p>
+<p>$$
+'\text{run cost}' = 2 \times 0.0025 \times 5000 = 25.0 .
+$$</p>
+<p>另外，total cost 是 startup cost、顺序扫描的 total cost 以及 run cost 之和：</p>
+<p>$$
+'\text{total cost}' = \left(\right. '\text{start}-\text{up cost}' + '\text{total cost of seq scan}' \left.\right) + '\text{run cost}'
+$$</p>
+<p>因此，</p>
+<p>$$
+'\text{total cost}' = \left(\right. 0.0 + 73.0 \left.\right) + 25.0 = 98.0 .
+$$</p>
+<h3>(Materialized) Nested Loop:</h3>
+<p>启动没有 cost，因此 start-up cost 为 0。</p>
+<p>$$
+'\text{start}-\text{up cost}' = 0
+$$</p>
+<p>在估算 run cost 之前，我们先考虑 <em>rescan cost</em>。该 cost 由以下公式定义：</p>
+<p>$$
+'\text{rescan cost}' = \text{cpu}<em>\text{operator}</em>\text{cost} \times N_{i n n e r}
+$$</p>
+<p>在本例中，</p>
+<p>$$
+'\text{rescan cost}' = \left(\right. 0.0025 \left.\right) \times 5000 = 12.5 .
+$$</p>
+<p>Run cost 由以下公式定义：</p>
+<p>$$
+'\text{run cost}' &amp; = \left(\right. \text{cpu}<em>\text{operator}</em>\text{cost} + \text{cpu}<em>\text{tuple}</em>\text{cost} \left.\right) \times N_{i n n e r} \times N_{o u t e r} \ + '\text{rescan cost}' \times \left(\right. N_{o u t e r} - 1 \left.\right) + C_{o u t e r , s e q s c a n}^{t o t a l} + C_{m a t e r i a l i z e}^{t o t a l}
+$$</p>
+<p>其中 Ctotalouter,seqscan $Couter,seqscantotal$ $C_{outer,seqscan}^{total}$ 是 outer 表的总扫描 cost，Ctotalmaterialize $Cmaterializetotal$ $C^{total}_{materialize}$ 是 materialize 操作的 total cost。因此，</p>
+<p>$$
+'\text{run cost}' = \left(\right. 0.0025 + 0.01 \left.\right) \times 5000 \times 10000 + 12.5 \times \left(\right. 10000 - 1 \left.\right) + 145.0 + 98.0 = 750230.5 .
+$$</p>
+<h2>3.5.1.3. Indexed Nested Loop Join</h2>
+<p>如果 inner 表上存在一个 index，可以用它查找满足 join 条件的 tuple，那么 planner 会考虑使用该 index 直接搜索 inner 表的 tuple，而不是进行顺序扫描。这种变体被称为 <strong>indexed nested loop join</strong>；参见图 3.21。尽管名字里带 loop，但该算法能够在单次 loop 中处理 outer 表的所有 tuple，因此可以高效地执行 join 操作。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/05/fig-3-21.png" /></p>
+<p>图 3.21. Indexed nested loop join。</p>
+<p>下面展示一个 indexed nested loop join 的具体示例。</p>
+<pre><code class="language-sql">testdb=# EXPLAIN SELECT * FROM tbl_c AS c, tbl_b AS b WHERE c.id = b.id;
+                                   QUERY PLAN
+--------------------------------------------------------------------------------
+ Nested Loop  (cost=0.29..1935.50 rows=5000 width=16)
+   -&gt;  Seq Scan on tbl_b b (cost=0.00..73.00 rows=5000 width=8)
+   -&gt;  Index Scan using tbl_c_pkey on tbl_c c  (cost=0.29..0.36 rows=1 width=8)
+         Index Cond: (id = b.id)
+rows
+</code></pre>
+<p>在第 6 行，显示了访问 inner 表一条 tuple 的 cost。这是在 inner 表中查找满足 index 条件 '(id=b.id) $(id=b.id)$ $(\text{id} = \text{b.id})$'（见第 7 行）的 tuple 的 cost。</p>
+<p>在第 7 行的 index 条件 '(id=b.id) $(id=b.id)$ $(\text{id} = \text{b.id})$' 中，'b.id $b.id$ $\text{b.id}$' 是 outer 表在 join 条件中使用的属性值。每当通过顺序扫描取到一条 outer 表的 tuple 时，第 6 行的 index scan path 就会查找待 join 的 inner tuple。换句话说，每次将 outer 表作为参数传入，该 index scan path 就会查找满足 join 条件的 inner tuple。这种 index path 被称为 <strong>parameterized (index) path</strong>。细节描述见 <code>README</code>。</p>
+<p>该 nested loop join 的 start-up cost 等于第 6 行 index scan 的 cost；因此，</p>
+<p>$$
+'\text{start}-\text{up cost}' = 0.285 .
+$$</p>
+<p>Indexed nested loop join 的 total cost 由以下公式定义：</p>
+<p>$$
+'\text{total cost}' = \left(\right. \text{cpu}<em>\text{tuple}</em>\text{cost} + C_{i n n e r , p a r a m e t e r i z e d}^{t o t a l} \left.\right) \times N_{o u t e r} + C_{o u t e r , s e q s c a n}^{r u n}
+$$</p>
+<p>其中 Ctotalinner,parameterized $Cinner,parameterizedtotal$ $C^{total}_{inner,parameterized}$ 是 parameterized inner index scan 的 total cost。</p>
+<p>在本例中，</p>
+<p>$$
+'\text{total cost}' = \left(\right. 0.01 + 0.3625 \left.\right) \times 5000 + 73.0 = 1935.5
+$$</p>
+<p>run cost 如下：</p>
+<p>$$
+'\text{run cost}' = 1935.5 - 0.285 = 1935.215 .
+$$</p>
+<p>如上所示，indexed nested loop 的 total cost 为 O(Nouter) $O(Nouter)$ $O(N_{outer})$。</p>
+<h2>3.5.1.4. Other Variations</h2>
+<p>如果 outer 表上存在 index 且其属性参与 join 条件，则可以用它做 index scan 代替 outer 表的顺序扫描。特别是，如果存在一个 index，其属性可以作为 WHERE 子句中的 access predicate，则 outer 表的搜索范围会被缩小。这可以大幅降低 nested loop join 的 cost。</p>
+<p>PostgreSQL 支持三种带 outer index scan 的 nested loop join 变体。参见图 3.22。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/05/fig-3-22.png" /></p>
+<p>图 3.22. 带 outer index scan 的 nested loop join 的三种变体。</p>
+<p>这些 join 的 EXPLAIN 结果如下所示：</p>
+<p>(a) 带 outer index scan 的 nested loop join</p>
+<pre><code class="language-sql">testdb=# SET enable_hashjoin TO off;
+SET
+testdb=# SET enable_mergejoin TO off;
+SET
+testdb=# EXPLAIN SELECT * FROM tbl_c AS c, tbl_b AS b WHERE c.id = b.id AND c.id = 500;
+                                   QUERY PLAN
+--------------------------------------------------------------------------------
+ Nested Loop  (cost=0.29..93.81 rows=1 width=16)
+   -&gt;  Index Scan using tbl_c_pkey on tbl_c c  (cost=0.29..8.30 rows=1 width=8)
+         Index Cond: (id = 500)
+   -&gt;  Seq Scan on tbl_b b  (cost=0.00..85.50 rows=1 width=8)
+         Filter: (id = 500)
+rows
+</code></pre>
+<p>(2) 带 outer index scan 的 materialized nested loop join</p>
+<pre><code class="language-sql">testdb=# SET enable_hashjoin TO off;
+SET
+testdb=# SET enable_mergejoin TO off;
+SET
+testdb=# EXPLAIN SELECT * FROM tbl_c AS c, tbl_b AS b WHERE c.id = b.id AND c.id &lt; 40 AND b.id &lt; 10;
+                                   QUERY PLAN
+---------------------------------------------------------------------------------
+ Nested Loop  (cost=0.29..99.76 rows=1 width=16)
+   Join Filter: (c.id = b.id)
+   -&gt;  Index Scan using tbl_c_pkey on tbl_c c  (cost=0.29..8.97 rows=39 width=8)
+         Index Cond: (id &lt; 40)
+   -&gt;  Materialize  (cost=0.00..85.55 rows=9 width=8)
+         -&gt;  Seq Scan on tbl_b b  (cost=0.00..85.50 rows=9 width=8)
+               Filter: (id &lt; 10)
+rows
+</code></pre>
+<p>(3) 带 outer index scan 的 indexed nested loop join</p>
+<pre><code class="language-sql">testdb=# SET enable_hashjoin TO off;
+SET
+testdb=# SET enable_mergejoin TO off;
+SET
+testdb=# EXPLAIN SELECT * FROM tbl_a AS a, tbl_d AS d WHERE a.id = d.id AND a.id &lt;  40;
+                                   QUERY PLAN
+---------------------------------------------------------------------------------
+ Nested Loop  (cost=0.57..173.06 rows=20 width=16)
+   -&gt;  Index Scan using tbl_a_pkey on tbl_a a  (cost=0.29..8.97 rows=39 width=8)
+         Index Cond: (id &lt; 40)
+   -&gt;  Index Scan using tbl_d_pkey on tbl_d d  (cost=0.28..4.20 rows=1 width=8)
+         Index Cond: (id = a.id)
+rows
+</code></pre></body>
+</html>

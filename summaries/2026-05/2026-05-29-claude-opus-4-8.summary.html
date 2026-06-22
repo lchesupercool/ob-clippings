@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-05-29-claude-opus-4-8.summary</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>Claude Opus 4.8: “a modest but tangible improvement”</h1>
+<h2>一句话结论</h2>
+<p>Simon Willison 认为 Claude Opus 4.8 最大亮点不是能力暴涨，而是 Anthropic 罕见地诚实承认它只是相对前代“温和但可感知的提升”；真正值得关注的是模型更诚实、更少无根据自信，并且对 agentic workflow 的 API/缓存细节有所改进。</p>
+<h2>文章主旨</h2>
+<p>Anthropic 发布 Claude Opus 4.8。Simon 最欣赏发布说明里的措辞：用户会感到它相比前代有“modest but tangible improvement”，同时 Anthropic 也承认还在努力把 Opus 的能力以更低成本提供出来。</p>
+<p>Simon 认为这种说法在 AI lab 里很少见：不是夸张宣传“重大突破”，而是诚实描述一次小幅迭代。</p>
+<h2>关键点</h2>
+<h3>1. 最大改进：诚实性</h3>
+<p>Anthropic 说 Opus 4.8 的突出改进之一是 honesty。模型更倾向于标出自己工作中的不确定性，不太会在证据不足时自信声称已经取得进展。</p>
+<p>系统卡里提到：在多个 benchmark 中，Claude Opus 4.8 的 incorrect-rate 是六个模型里最低的。它做到这一点，主要不是因为答对更多问题，而是因为在不确定时更愿意 abstain / 不回答。</p>
+<p>这点对代码任务尤其重要：Anthropic 的评估显示，Opus 4.8 比前代少约 4 倍概率让自己写出的代码缺陷不被指出。</p>
+<h3>2. 模型规格基本延续 4.7</h3>
+<p>相比 4.7，模型特性没有太大变化：</p>
+<ul>
+<li>价格仍是 5 美元 / 百万 input token，25 美元 / 百万 output token。</li>
+<li>Fast mode 价格是普通模式 2 倍，但比 4.6/4.7 的 fast mode 便宜很多。</li>
+<li>Fast mode 仍是 research preview，需要联系 account manager。</li>
+<li>reliable knowledge cutoff 和 training data cutoff 都是 2026 年 1 月，和 4.7 一样。</li>
+<li>context window 仍是 100 万 token。</li>
+<li>max output 仍是 12.8 万 token。</li>
+</ul>
+<h3>3. 中途 system message 对 agent 很重要</h3>
+<p>Opus 4.8 支持在长对话中，在 user turn 后插入新的 <code>role: "system"</code> message。意义是：不用每次重发完整 system prompt，也能在长时间 agent loop 中追加新指令。</p>
+<p>Simon 关注的是这能保留前面 prompt cache 的命中，从而降低 agent 循环中的输入成本。对长期运行的 coding agent、多轮工具调用 agent、任务中途策略调整都很有用。</p>
+<h3>4. Prompt cache 门槛降低</h3>
+<p>Opus 4.8 的最小可缓存 prompt 长度降到 1,024 tokens，而 4.7 是 4,096 tokens。这意味着更多中小型 prompt 也能吃到 cache，实际使用成本可能下降，尤其适合频繁调用、结构化提示词、agent 工具循环。</p>
+<h3>5. Pelican 测试只是轻松展示</h3>
+<p>Simon 还用不同 thinking levels 生成“五只骑自行车的鹈鹕”：low、medium、high、xhigh、max。max 效果最好，但成本也明显更高：25 input tokens、17,167 output tokens，总成本约 43 美分。</p>
+<p>这个例子不是严肃 benchmark，更像 Simon 的惯例式模型体验测试：看看不同 reasoning/thinking 档位在可视化输出上的差异，以及高档位是否真的值得成本。</p>
+<h2>我的理解</h2>
+<p>这篇文章的核心不是“Opus 4.8 多强”，而是两个趋势：</p>
+<ol>
+<li>模型发布叙事开始从“革命性突破”回到“可验证的小改进”。</li>
+<li>顶级模型优化重点越来越偏向 agent 实用性：更诚实、更少幻觉、更会承认不确定、更适配 prompt cache、更支持长任务中途改写系统指令。</li>
+</ol>
+<p>对实际开发者来说，Opus 4.8 的吸引力不在于参数规格变化，而在于它可能更适合作为长程 coding agent / research agent 的核心模型：少一些“装懂”，多一些“不确定提示”，这比纯 benchmark 涨分更有工程价值。</p>
+<p>不过价格仍然很贵。Anthropic 自己也承认正在努力把 Opus 能力下放到更低成本模型。短期看，Opus 4.8 适合高价值复杂任务；日常任务仍可能需要 Sonnet 或其他便宜模型承担。</p></body>
+</html>

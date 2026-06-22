@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>中译-3.6. Creating the Plan Tree of Multiple-Table Query  Hironobu SUZUKI @ InterDB</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>3.6. 构建多表查询的 plan tree</h1>
+<p>本节介绍构建多表查询 plan tree 的过程。</p>
+<p>章节内容</p>
+<ul>
+<li><code>3.6.1. Preprocessing</code></li>
+<li><code>3.6.2. Getting the Cheapest Path</code></li>
+<li><code>3.6.3. Getting the Cheapest Path of a Triple-Table Query</code></li>
+</ul>
+<h2>3.6.1. 预处理</h2>
+<p>定义在 <code>planner.c</code> 中的 subquery_planner() 函数会调用预处理流程。单表查询的预处理已在 <code>Section 3.3.1</code> 中描述过。本小节将介绍多表查询的预处理。由于内容较多，这里只介绍其中的一部分。</p>
+<ol>
+<li>规划并转换 CTE
+    如果存在 WITH 列表，planner 会通过 SS_process_ctes() 函数处理每一个 WITH query。</li>
+<li>提升 Subquery
+    如果 FROM 子句中包含 subquery，且该 subquery 不含 GROUP BY、HAVING、ORDER BY、LIMIT 或 DISTINCT 子句，也不使用 INTERSECT 或 EXCEPT，那么 planner 会通过 pull_up_subqueries() 函数将其转换为 join 形式。
+    例如，下面这条在 FROM 子句中包含 subquery 的查询可以被转换为一条 natural join query。不用说，这种转换是在 query tree 上完成的。
+    <code>sql
+    testdb=# SELECT * FROM tbl_a AS a, (SELECT * FROM tbl_b) as b WHERE a.id = b.id;</code>
+    ⇓
+    $$
+    \Downarrow
+    $$
+    <code>sql
+    testdb=# SELECT * FROM tbl_a AS a, tbl_b as b WHERE a.id = b.id;</code></li>
+<li>将 outer join 转换为 inner join
+    planner 会在可能的情况下将 outer join query 转换为 inner join query。</li>
+</ol>
+<h2>3.6.2. 获取 cheapest path</h2>
+<p>为了得到最优的 plan tree，planner 需要考虑所有 index 和 join method 的组合。这个过程代价非常高，当表的数量超过某个程度时，由于组合爆炸，这种做法将变得不可行。幸运的是，当表的数量小于约 12 时，planner 可以通过 dynamic programming 得到最优 plan。否则，planner 会使用 <em>genetic algorithm</em>。参考下文。</p>
+<p>当执行一条 join 了很多表的 query 时，优化 query plan 将耗费大量时间。为了应对这种情况，PostgreSQL 实现了一个有趣的特性：</p>
+<p><code>Genetic Query Optimizer</code>。</p>
+<p>这是一种近似算法，可以在合理的时间内确定一个合理的 plan。因此，在 query 优化阶段，如果要 join 的表的数量高于由参数 <code>geqo_threshold</code> 指定的阈值（默认值为 12），PostgreSQL 就会使用 genetic algorithm 生成 query plan。</p>
+<p>通过 dynamic programming 确定最优 plan tree 可以用以下步骤说明：</p>
+<ul>
+<li>Level = 1
+    获取每个表的 cheapest path。该 cheapest path 被保存在对应的 RelOptInfo 中。</li>
+<li>Level = 2
+    获取每两个表组合的 cheapest path。
+    例如，如果有两个表 A 和 B，就获取表 A 和 B 的最便宜 join path。这就是最终答案。
+    下文中，两个表的 RelOptInfo 用 {A, B} 表示。
+    如果有三个表，则分别获取 {A, B}、{A, C} 和 {B, C} 的 cheapest path。</li>
+<li>Level = 3 及以上
+    继续同样的流程，直到 level 等于表的数量为止。</li>
+</ul>
+<p>这样一来，每个 level 上都会得到子问题的 cheapest path，并用于上一层 level 的计算。这使得高效计算最便宜 plan tree 成为可能。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-34.png" /></p>
+<p>Figure 3.34. 如何使用 dynamic programming 获取最便宜 access path。</p>
+<p>下面描述 planner 如何为以下 query 获取最便宜 plan 的过程。</p>
+<pre><code class="language-sql">testdb=# \d tbl_a
+     Table &quot;public.tbl_a&quot;
+ Column |  Type   | Modifiers
+--------+---------+-----------
+ id     | integer | not null
+ data   | integer |
+Indexes:
+    &quot;tbl_a_pkey&quot; PRIMARY KEY, btree (id)
+
+testdb=# \d tbl_b
+     Table &quot;public.tbl_b&quot;
+ Column |  Type   | Modifiers
+--------+---------+-----------
+ id     | integer |
+ data   | integer |
+
+testdb=# SELECT * FROM tbl_a AS a, tbl_b AS b WHERE a.id = b.id AND b.data &lt; 400;
+</code></pre>
+<h3>3.6.2.1. Level 1 的处理</h3>
+<p>在 Level 1 中，planner 会为 query 中的每个 relation 创建一个 RelOptInfo 结构并估算其 cheapest cost。这些 RelOptInfo 结构会被添加到该 query 的 PlannerInfo 的 simple_rel_array 中。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-35.png" /></p>
+<p>Figure 3.35. Level 1 处理之后的 PlannerInfo 和 RelOptInfo。</p>
+<p>tbl_a 的 RelOptInfo 有三条 access path，这些 path 被添加到该 RelOptInfo 的 pathlist 中。每条 access path 都会被链接到一条最便宜 cost path：<em>cheapest start-up (cost) path</em>、<em>cheapest total (cost) path</em> 和 <em>cheapest parameterized (cost) path</em>。cheapest start-up 和 total cost path 含义较为直观，下面将介绍最便宜的 parameterized index scan path 的 cost。</p>
+<p>正如 <code>Section 3.5.1.3</code> 中所述，planner 会考虑在 indexed nested loop join（以及极少数情况下带有 outer index scan 的 indexed merge join）中使用 parameterized path。cheapest parameterized cost 是所估算的 parameterized path 中最便宜的 cost。</p>
+<p>tbl_b 的 RelOptInfo 只包含一条 sequential scan access path，因为 tbl_b 没有相关的 index。</p>
+<h3>3.6.2.2. Level 2 的处理</h3>
+<p>在 Level 2 中，会创建一个 RelOptInfo 结构并被加入到 PlannerInfo 的 join_rel_list 中。接着，会估算所有可能 join path 的 cost，并选出 total cost 最便宜的 best access path。RelOptInfo 会将该 best access path 保存为其 cheapest total cost path。见 Figure 3.36。</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-36.png" /></p>
+<p>Figure 3.36. Level 2 处理之后的 PlannerInfo 和 RelOptInfo。</p>
+<p>Table 3.1 展示了本例中所有 join access path 的组合。本例中的 query 是 equi-join 类型，因此三种 join method 都会被估算。为了方便起见，这里引入一些 access path 的记号：</p>
+<ul>
+<li><em>SeqScanPath(table)</em> 表示 table 的 sequential scan path。</li>
+<li><em>Materialized-&gt;SeqScanPath(table)</em> 表示 table 被物化后的 sequential scan path。</li>
+<li><em>IndexScanPath(table, attribute)</em> 表示按该 table 的 attribute 进行 index scan 的 path。</li>
+<li><em>ParameterizedIndexScanPath(table, attribute1, attribute2)</em> 表示按 table 的 attribute1 进行 parameterized index path，该 path 由 outer table 的 attribute2 参数化。</li>
+</ul>
+<table><caption><b>Table 3.1: 本例中 join access path 的所有组合</b></caption><tbody><tr><th></th><th>Outer Path</th><th>Inner Path</th><th></th></tr><tr><td colspan="4">Nested Loop Join</td></tr><tr><td>1</td><td>SeqScanPath(tbl_a)</td><td>SeqScanPath(tbl_b)</td><td></td></tr><tr><td>2</td><td>SeqScanPath(tbl_a)</td><td>Materialized->SeqScanPath(tbl_b)</td><td>Materialized nested loop join</td></tr><tr><td>3</td><td>IndexScanPath(tbl_a,id)</td><td>SeqScanPath(tbl_b)</td><td>Nested loop join with outer index scan</td></tr><tr><td>4</td><td>IndexScanPath(tbl_a,id)</td><td>Materialized->SeqScanPath(tbl_b)</td><td>Materialized nested loop join with outer index scan</td></tr><tr><td>5</td><td>SeqScanPath(tbl_b)</td><td>SeqScanPath(tbl_a)</td><td></td></tr><tr><td>6</td><td>SeqScanPath(tbl_b)</td><td>Materialized->SeqScanPath(tbl_a)</td><td>Materialized nested loop join</td></tr><tr><td>7</td><td>SeqScanPath(tbl_b)</td><td>ParametalizedIndexScanPath(tbl_a, id, tbl_b.id)</td><td>Indexed nested loop join</td></tr><tr><td colspan="4">Merge Join</td></tr><tr><td>1</td><td>SeqScanPath(tbl_a)</td><td>SeqScanPath(tbl_b)</td><td></td></tr><tr><td>2</td><td>IndexScanPath(tbl_a,id)</td><td>SeqScanPath(tbl_b)</td><td>Merge join with outer index scan</td></tr><tr><td>3</td><td>SeqScanPath(tbl_b)</td><td>SeqScanPath(tbl_a)</td><td></td></tr><tr><td colspan="4">Hash Join</td></tr><tr><td>1</td><td>SeqScanPath(tbl_a)</td><td>SeqScanPath(tbl_b)</td><td></td></tr><tr><td>2</td><td>SeqScanPath(tbl_b)</td><td>SeqScanPath(tbl_a)</td><td></td></tr></tbody></table>
+
+<p>例如在 nested loop join 中，共估算了七条 join path。第一条表示 outer 和 inner path 分别是 tbl_a 和 tbl_b 的 sequential scan path。第二条表示 outer path 是 tbl_a 的 sequential scan path，inner path 则是 tbl_b 物化之后的 sequential scan path。以此类推。</p>
+<p>planner 最终会从估算出的 join path 中选出最便宜的 access path，并将该 cheapest path 加入到 RelOptInfo {tbl_a,tbl_b} 的 pathlist 中。见 Figure 3.36。</p>
+<p>在本例中，如下面 EXPLAIN 的结果所示，planner 选择了 hash join，其 inner 和 outer 表分别是 tbl_b 和 tbl_c。</p>
+<pre><code class="language-sql">testdb=# EXPLAIN  SELECT * FROM tbl_b AS b, tbl_c AS c WHERE c.id = b.id AND b.data &lt; 400;
+                              QUERY PLAN
+----------------------------------------------------------------------
+ Hash Join  (cost=90.50..277.00 rows=400 width=16)
+   Hash Cond: (c.id = b.id)
+   -&gt;  Seq Scan on tbl_c c  (cost=0.00..145.00 rows=10000 width=8)
+   -&gt;  Hash  (cost=85.50..85.50 rows=400 width=8)
+         -&gt;  Seq Scan on tbl_b b  (cost=0.00..85.50 rows=400 width=8)
+               Filter: (data &lt; 400)
+rows
+</code></pre>
+<h2>3.6.3. 获取三表 query 的 cheapest path</h2>
+<p>获取涉及三张表的 query 的 cheapest path 过程如下：</p>
+<pre><code class="language-sql">testdb=# \d tbl_a
+     Table &quot;public.tbl_a&quot;
+ Column |  Type   | Modifiers
+--------+---------+-----------
+ id     | integer |
+ data   | integer |
+
+testdb=# \d tbl_b
+     Table &quot;public.tbl_b&quot;
+ Column |  Type   | Modifiers
+--------+---------+-----------
+ id     | integer |
+ data   | integer |
+
+testdb=# \d tbl_c
+     Table &quot;public.tbl_c&quot;
+ Column |  Type   | Modifiers
+--------+---------+-----------
+ id     | integer | not null
+ data   | integer |
+Indexes:
+    &quot;tbl_c_pkey&quot; PRIMARY KEY, btree (id)
+
+testdb=# SELECT * FROM tbl_a AS a, tbl_b AS b, tbl_c AS c
+testdb-#                WHERE a.id = b.id AND b.id = c.id AND a.data &lt; 40;
+</code></pre>
+<ul>
+<li>Level 1：
+    planner 估算所有表的 cheapest path，并将这些信息保存在对应的 RelOptInfo 对象中：{tbl_a}、{tbl_b} 和 {tbl_c}。</li>
+<li>Level 2：
+    planner 取出三张表中所有两两组合，并为每种组合估算 cheapest path。然后将信息保存到对应的 RelOptInfo 对象中：{tbl_a, tbl_b}、{tbl_b, tbl_c} 和 {tbl_a, tbl_c}。</li>
+<li>
+<p>Level 3：
+    planner 最终利用已获得的 RelOptInfo 对象得到 cheapest path。</p>
+<p>更准确地说，planner 会考虑三种 RelOptInfo 对象的组合：{tbl_a, {tbl_b, tbl_c}}、{tbl_b, {tbl_a, tbl_c}} 和 {tbl_c, {tbl_a, tbl_b}}，因为</p>
+</li>
+</ul>
+<p>planner 接着会估算其中所有可能 join path 的 cost。</p>
+<p>对于 RelOptInfo 对象 {tbl_c, {tbl_a, tbl_b}}，planner 会估算 tbl_c 与 {tbl_a, tbl_b} 的 cheapest path 的所有组合；在本例中，该 cheapest path 是 hash join，其 inner 和 outer 表分别为 tbl_a 和 tbl_b。</p>
+<p>这些估算出的 join path 将包含三类 join path 及其变体，如前一小节所示，即 nested loop join 及其变体、merge join 及其变体，以及 hash join。</p>
+<p>planner 以同样的方式处理 RelOptInfo 对象 {tbl_a, {tbl_b, tbl_c}} 和 {tbl_b, {tbl_a, tbl_c}}，并最终从所有估算出的 path 中选出最便宜的 access path。</p>
+<p>这条 query 的 EXPLAIN 命令的结果如下所示：</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql03/fig-3-37.png" /></p>
+<p>最外层的 join 是 indexed nested loop join（第 5 行）。内侧的 parameterized index scan 见第 13 行，其 outer relation 则是一条 hash join 的结果，该 hash join 的 inner 和 outer 表分别为 tbl_b 和 tbl_a（第 7-12 行）。因此，executor 会先执行 tbl_a 和 tbl_b 的 hash join，然后再执行 indexed nested loop join。</p></body>
+</html>

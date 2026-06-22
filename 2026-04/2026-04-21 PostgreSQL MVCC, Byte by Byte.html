@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-04-21 PostgreSQL MVCC, Byte by Byte</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>PostgreSQL MVCC, Byte by Byte</h1>
+<p>原文链接: https://boringsql.com/posts/postgresql-mvcc-byte-by-byte/</p>
+<p>You run SELECT * FROM orders in one psql session and see 50 million rows. A colleague in another session runs the same query at the same moment and sees 49,999,999. Neither of you is wrong, and neither is seeing stale data. You are both reading the same 8KB heap pages, the same bytes on disk.</p>
+<p>This is the promise of PostgreSQL's MVCC (Multi-Version Concurrency Control), and it's the reason readers never block writers and writers never block readers. It is also one of the most misunderstood pieces of the storage engine. People know "there are multiple versions of a row" and leave it at that.</p>
+<p>The answer lives in eight bytes on every single tuple.</p>
+<h2>xmin and xmax: the only two XIDs that matter</h2>
+<p>If you've read Inside the 8KB Page, you know that every tuple starts with 23-byte header. The first eight bytes of that header are two 32-bit transaction IDs: t_xmin (the transaction that inserted this version) and t_xmax (the transaction that deleted or updated it, or 0 if it's still live).</p>
+<p>That's the core of MVCC at the storage level. PostgreSQL does not keep a separate "current version" table. It does not mark rows as latest. Every tuple carries its own two-field timestamp, and when your query reads a page, PostgreSQL has to decide, tuple by tuple, whether your transaction is allowed to see it.</p>
+<p>A minimal demo:</p>
+<pre><code class="language-sql">CREATE TABLE mvcc_demo (id int, val text);
+INSERT INTO mvcc_demo VALUES (1, 'alpha'), (2, 'beta');
+</code></pre>
+<p>Peek at the raw page with pageinspect:</p>
+<pre><code class="language-sql">SELECT lp, t_xmin, t_xmax, t_ctid
+FROM heap_page_items(get_raw_page('mvcc_demo', 0));
+</code></pre>
+<pre><code class="language-sql"> lp | t_xmin | t_xmax | t_ctid
+----+--------+--------+--------
+  1 |    100 |      0 | (0,1)
+  2 |    100 |      0 | (0,2)
+(2 rows)
+</code></pre>
+<p>Two tuples. Both stamped with t_xmin = 100 (the transaction that ran the INSERT) and t_xmax = 0 (nobody has deleted them). At this moment, every session on the database will see these rows, because everyone's snapshot agrees that transaction 100 has committed.</p>
+<p>Now open two concurrent sessions. Session A runs an UPDATE without committing:</p>
+<pre><code class="language-sql">-- session A
+BEGIN;
+UPDATE mvcc_demo SET val = 'alpha-new' WHERE id = 1;
+-- do not commit yet
+</code></pre>
+<p>Peek at the page again:</p>
+<pre><code class="language-sql">SELECT lp, t_xmin, t_xmax, t_ctid
+FROM heap_page_items(get_raw_page('mvcc_demo', 0));
+</code></pre>
+<pre><code class="language-sql"> lp | t_xmin | t_xmax | t_ctid
+----+--------+--------+--------
+  1 |    100 |    101 | (0,3)
+  2 |    100 |      0 | (0,2)
+  3 |    101 |      0 | (0,3)
+(3 rows)
+</code></pre>
+<p>One UPDATE, three tuples. The old version of id=1 is still there at line pointer 1 with t_xmax = 101 stamped on it, and a new version lives at line pointer 3 with t_xmin = 101.</p>
+<p>Session A hasn't committed. Transaction 101 is still in flight. Session B, running SELECT * FROM mvcc_demo right now, still sees the original alpha, not alpha-new. The three tuples live on the page, but Session B's snapshot says XID 101 is in flight and ignores anything it did. The visibility decision happens on the fly, every time tuple is touched.</p>
+<p>This is the part that makes MVCC counterintuitive: the bytes on disk don't change depending on who's asking. What changes is the visibility verdict the planner applies when reading them.</p>
+<h2>Snapshots</h2>
+<p>pg_current_snapshot() is the cleanest way to see what your session is actually holding.</p>
+<pre><code class="language-sql">SELECT pg_current_snapshot();
+</code></pre>
+<pre><code class="language-sql"> pg_current_snapshot
+---------------------
+ 101:103:101
+(1 row)
+</code></pre>
+<p>That's xmin:xmax:xip_list, and it's the whole snapshot:</p>
+<ul>
+<li>xmin: the lowest XID that might still be in flight. Everything below has already resolved (committed or aborted). You can trust its t_xmin/t_xmax stamps without further checks.</li>
+<li>xmax: the first not-yet-assigned XID. Anything at or above this value doesn't exist yet. Tuples stamped with it must be ignored.</li>
+<li>xip_list: the XIDs between xmin and xmax that are still running. These are the "in-flight" transactions whose writes must not be visible to you.</li>
+</ul>
+<p>PostgreSQL applies this test tuple by tuple. If your snapshot considers t_xmin aborted or still in flight, the tuple doesn't exist for you and PostgreSQL skips it. If t_xmin is committed, t_xmax decides: zero means the tuple is live, a committed t_xmax means someone has deleted it and you can't see it, and an in-flight or aborted t_xmax means the deletion hasn't reached your snapshot yet.</p>
+<p>Same page. Same bytes. Different sessions have different snapshots, so they land on different outcomes for the same tuple.</p>
+<blockquote>
+<p>Interactive MVCC Visualizer</p>
+<p>Drive two concurrent sessions against the same heap page. Watch xmin and xmax stamps change, flip between READ COMMITTED and REPEATABLE READ, trace visibility rules tuple by tuple, and run VACUUM when the dead versions pile up.</p>
+<p>Open Visualizer</p>
+</blockquote>
+<p><a href="https://boringsql.com/visualizers/mvcc/">Open Visualizer</a></p>
+<h2>READ COMMITTED vs REPEATABLE READ</h2>
+<p>The difference between PostgreSQL's two most-used isolation levels boils down to one question: when is the snapshot captured?</p>
+<p>READ COMMITTED (the default) captures a fresh snapshot at the start of every statement. If another session commits between your first and second SELECT, your second SELECT sees the change. The world moves forward under your transaction, statement by statement.</p>
+<p>REPEATABLE READ captures a single snapshot when the transaction begins and reuses it for every subsequent statement. The world is frozen from your transaction's perspective. Other sessions can commit thousand changes; your query keeps returning what was visible at BEGIN.</p>
+<p>The bytes on the page are identical in both cases. The only difference is which snapshot your transaction is walking around with.</p>
+<pre><code class="language-sql">-- session A, READ COMMITTED (default)
+BEGIN;
+SELECT val FROM mvcc_demo WHERE id = 1;  -- 'alpha'
+
+-- session B, in another terminal:
+UPDATE mvcc_demo SET val = 'alpha-new' WHERE id = 1;
+-- (auto-commits)
+
+-- back in session A:
+SELECT val FROM mvcc_demo WHERE id = 1;  -- 'alpha-new' new statement, new snapshot
+COMMIT;
+</code></pre>
+<p>Now repeat with REPEATABLE READ:</p>
+<pre><code class="language-sql">-- session A, REPEATABLE READ
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT val FROM mvcc_demo WHERE id = 1;  -- 'alpha-new'
+
+-- session B:
+UPDATE mvcc_demo SET val = 'alpha-newer' WHERE id = 1;
+-- (auto-commits)
+
+-- Back in session A:
+SELECT val FROM mvcc_demo WHERE id = 1;  -- still 'alpha-new'  same snapshot as BEGIN
+COMMIT;
+</code></pre>
+<p>The visualizer exposes this directly: there's an isolation-level selector on each session. Under REPEATABLE READ, the snapshot is captured at BEGIN and persists. Under READ COMMITTED, it refreshes every time you run SELECT. Watch how the visibility badges on each tuple flip accordingly.</p>
+<h2>Every UPDATE leaves a dead tuple behind</h2>
+<p>Every UPDATE in PostgreSQL creates a new tuple version. The old version doesn't vanish. It gets stamped with t_xmax and sits on the page, taking up space, until VACUUM comes through and reclaims it.</p>
+<p>On a busy table with lots of updates, dead tuples can accumulate faster than VACUUM clears them. This is "bloat," and it's one of the most common reasons teams think Postgres needs re-tuning. The MVCC contract ("never block, always give a consistent view") is paid for in disk space.</p>
+<p>You can see the dead tuples accumulate with pgstattuple:</p>
+<pre><code class="language-sql">CREATE EXTENSION IF NOT EXISTS pgstattuple;
+
+-- After lots of updates
+SELECT table_len, tuple_count, dead_tuple_count, dead_tuple_percent
+FROM pgstattuple('mvcc_demo');
+</code></pre>
+<pre><code class="language-sql"> table_len | tuple_count | dead_tuple_count | dead_tuple_percent
+-----------+-------------+------------------+--------------------
+      8192 |           2 |                3 |              42.15
+(1 row)
+</code></pre>
+<p>Three dead tuples, two live ones, 42% of the page wasted. That 42% stays wasted until VACUUM runs, or until page-level pruning kicks in during the next query that touches this page and notices the dead space.</p>
+<h2>The xmin horizon</h2>
+<p>VACUUM can only reclaim a dead tuple when no running transaction might still need to see it. If Session B started a REPEATABLE READ transaction five minutes ago and has been sitting idle, its snapshot still considers the pre-update version of id=1 to be the live one. VACUUM cannot touch it without breaking that session.</p>
+<p>So VACUUM finds the oldest active transaction on the system and refuses to clean anything newer. A long-running REPEATABLE READ transaction (say, an analytics query that takes an hour) effectively pins every tuple version produced during that hour. The table keeps bloating. Autovacuum runs, finds nothing it's allowed to clean, and goes home.</p>
+<p>The long-running-transaction problem isn't an MVCC bug. It's MVCC working as designed. The price of "readers never block" is that readers can block cleanup. If you've ever checked pg_stat_activity on a misbehaving production database and spotted a 14-hour-old idle in transaction, you know this shape.</p>
+<p>The visualizer shows this cleanly: start a REPEATABLE READ transaction in Session B, have Session A run a bunch of UPDATEs and COMMITs, then hit VACUUM. The reclaim count won't include tuple versions Session B can still see.</p>
+<h2>Hint bits: why SELECT can dirty a page</h2>
+<p>The first SELECT that touches a page after new writes can cause the page to be written back to disk. Not because the SELECT modified any data, but because it set hint bits.</p>
+<p>When PostgreSQL encounters a tuple with t_xmin = 101 and needs to know whether 101 committed, it doesn't magically know. It has to look up 101 in pg_xact (formerly pg_clog), the commit log. Once it finds the answer, it caches that answer in the tuple's t_infomask bits (HEAP_XMIN_COMMITTED or HEAP_XMIN_INVALID). Future readers skip the pg_xact lookup entirely.</p>
+<p>Setting those bits is a write. The page becomes dirty. Eventually it gets flushed. Your innocent SELECT ends up triggering I/O.</p>
+<p>This is why EXPLAIN (ANALYZE, BUFFERS) on a cold table sometimes shows dirtied buffers even when the plan contains nothing but reads. It's also why the "first query after bulk load" pattern has that mysterious slow run: you're paying the one-time cost of setting hint bits acros thousands of freshly written pages. See Understanding EXPLAIN Buffers for more on how these counters show up.</p>
+<h2>The MVCC contract in one paragraph</h2>
+<p>Every tuple carries t_xmin and t_xmax. Every transaction carries a snapshot of (xmin, xmax, xip_list). Visibility is a two-stage lookup that compares the two. UPDATE and DELETE don't modify bytes in place. They stamp t_xmax on the old version and append a new one. VACUUM cleans up dead versions, but only the ones no live transaction could still need. Long-running transactions block VACUUM. Every SELECT can dirty a page the first time it sees new data, because it caches commit status in hint bits.</p>
+<p>Eight bytes of XIDs per tuple, plus a three-number snapshot per transaction, plus one visibility function. That's the whole mechanism, but the consequences spread through every piece of PostgreSQL operations, from bloat monitoring to replication to autovacuum tuning.</p>
+<p>For the full byte-level tour (hint-bit encodings, the visibility map, freezing, XID wraparound), the storage series covers these in detail. If you've never watched MVCC happen, the visualizer is the fastest way to build the intuition. Run the two sessions against each other, flip the isolation level, then come back to this post.</p>
+<p>[[中译-2026-04-21 PostgreSQL MVCC, Byte by Byte]]</p></body>
+</html>

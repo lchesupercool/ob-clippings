@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>2026-06-14-aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>Migrate Oracle hierarchical queries to Amazon Aurora PostgreSQL</h1>
+<h2>AWS Database Blog</h2>
+<h1>Migrate Oracle hierarchical queries to Amazon Aurora PostgreSQL</h1>
+<p>We have seen a number of organizations are migrating their database workloads from commercial database engines to the <a href="https://aws.amazon.com/rds/aurora/">Amazon Aurora</a> database environment. These organizations have reduced their overall efforts on common database administration tasks, data center maintenance, and have moved away from proprietary database features and commercial licenses.</p>
+<p>AWS provides the <a href="https://aws.amazon.com/dms/schema-conversion-tool/">AWS Schema Conversion Tool</a> (AWS SCT) which simplifies schema conversion for heterogeneous database migration. AWS SCT reports objects and SQL requiring <a href="https://aws.amazon.com/blogs/database/how-to-solve-some-common-challenges-faced-while-migrating-from-oracle-to-postgresql/">manual efforts</a> for conversion. <a href="https://docs.oracle.com/cd/B19306_01/server.102/b14200/queries003.htm">Hierarchical queries</a> conversion requires additional efforts to convert, validate, and test in comparison to objects automatically converted by AWS SCT.</p>
+<p>In this post, we show you how to migrate different hierarchical queries from Oracle to <a href="https://aws.amazon.com/rds/aurora/postgresql-features/">Amazon Aurora PostgreSQL-Compatible Edition</a> using <a href="https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-RECURSIVE">recursive queries</a> in <a href="https://www.postgresql.org/docs/14/queries-with.html">common table expressions</a> (CTE). We also look at a few limitations of the <a href="https://www.postgresql.org/docs/current/tablefunc.html">tablefunc</a> extension <a href="https://docs.aws.amazon.com/AmazonRDS/latest/AuroraPostgreSQLReleaseNotes/AuroraPostgreSQL.Extensions.html">supported</a> by Aurora PostgreSQL.</p>
+<h2>Hierarchical queries</h2>
+<p>In Oracle, hierarchical queries are used to query data that has a parent-child relationship where each child can have only one parent, whereas a parent can have multiple children. This is very useful when trying to build reporting queries such as product lineage, manager reports, and a family tree. A hierarchical query displays organized rows in a tree structure, so in order to retrieve the data, it has to be traversed starting from the root. The following diagram illustrates a sample tree structure.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image001.png" /></p>
+<p>In the above diagram, the first node at the top of the hierarchy, A1, is called the root node, and the rest of the nodes such as B1, B2, and B3 are the children nodes. If a query needs to find the hierarchy of node D1, it will scan the tree from A1 to B3 and then to C2, traversing down to D1.</p>
+<h2>Prerequisites</h2>
+<p>We use the following sample table and data throughout our examples in this post.</p>
+<table>
+<thead>
+<tr>
+<th>Oracle</th>
+<th>PostgreSQL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>create table hier_test( emp_no number, ename varchar2(5), job varchar2(50), manager_no number ); insert into hier_test values(10,'A1','CEO',null); insert into hier_test values(11, 'B1', 'VP HARDWARE', 10); insert into hier_test values(12, 'B2', 'VP ADMIN', 10); insert into hier_test values(13, 'B3', 'VP DEVELOPMENT', 10); insert into hier_test values(14, 'C1', 'DIRECTOR DEVELOPMENT', 13); insert into hier_test values(15, 'C2', 'DIRECTOR DEVELOPMENT', 13); insert into hier_test values(16, 'D1', 'MANAGER DEVELOPMENT', 15); insert into hier_test values(17 ,'E1', 'ENGINEER HARDWARE', 11); insert into hier_test values(18, 'E2', 'ENGINEER HARDWARE', 11);</td>
+<td>create table hier_test( emp_no int, ename varchar(5), job varchar(50), manager_no int ); insert into hier_test values(10,'A1','CEO',null); insert into hier_test values(11, 'B1', 'VP HARDWARE', 10); insert into hier_test values(12, 'B2', 'VP ADMIN', 10); insert into hier_test values(13, 'B3', 'VP DEVELOPMENT', 10); insert into hier_test values(14, 'C1', 'DIRECTOR DEVELOPMENT', 13); insert into hier_test values(15, 'C2', 'DIRECTOR DEVELOPMENT', 13); insert into hier_test values(16, 'D1', 'MANAGER DEVELOPMENT', 15); insert into hier_test values(17 ,'E1', 'ENGINEER HARDWARE', 11); insert into hier_test values(18, 'E2', 'ENGINEER HARDWARE', 11);</td>
+</tr>
+</tbody>
+</table>
+<p>Although PostgreSQL doesn’t have functions or predefined keywords to handle the hierarchical queries directly, you can define custom solutions with the help of the <a href="https://www.postgresql.org/docs/current/tablefunc.html">tablefunc</a> extension and CTEs. <code>Tablefunc</code> is useful for hierarchical queries with <code>connect by</code> and level keywords, but with CTE we can support various types of keywords such as <code>LEVEL</code>, <code>NOCYCLE</code>, <code>SYS_CONNECT_BY_PATH</code>, <code>ORDER SIBLINGS BY</code>, <code>CONNECT_BY_ISLEAF</code>, and <code>CONNECT_BY_ROOT</code> of hierarchical queries. We are going to discuss and look at these scenarios in details in the following sections.</p>
+<h2>tablefunc extension</h2>
+<p>The <code>tablefunc</code> extension has a function called <code>connectby</code>, which produces a display of hierarchical data that is stored in a table.</p>
+<p>For the <code>connectby</code> function to work, the table needs the following:</p>
+<ul>
+<li>A key field that uniquely identifies rows</li>
+<li>A parent-key field that references the parent (if any) of each row</li>
+</ul>
+<p>This function can display the sub-tree descending from a row. The primary use case of this function is to display parent-child connections (hierarchy data).</p>
+<p>The following code demonstrates our PostgreSQL query:</p>
+<pre><code class="language-sql">SELECT * FROM 
+  Connectby(‘hier_test’, ‘emp_no’, ‘manager_no’, ‘10’, 0, ‘-&gt;’) AS t(emp_no int, manager_no int, level int, ord text) 
+  order by emp_no;
+</code></pre>
+<p>The following screenshot shows our output.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image003.png" /></p>
+<p>The <code>connectby</code> function works best when only the parent, child, and level attributes are selected. For example, in the following query, fetching the <code>ename</code> attribute results in an error:</p>
+<pre><code class="language-sql">SELECT * FROM 
+  Connectby('hier_test', 'emp_no', 'manager_no', '10', 0, '-&gt;','ename') AS 
+  t(emp_no int, manager_no int, level int, ord text,ename text) 
+  order by emp_no;
+</code></pre>
+<p>We get the following output.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image005.png" /></p>
+<p>Additionally, <code>connectby</code> cannot be used with hierarchical queries built using keywords like <code>NOCYCLE</code>, <code>CONNECT_BY_ISLEAF</code>, <code>SYS_CONNECT_BY_PATH</code>, <code>ORDER SIBLINGS BY</code>, and <code>CONNECT_BY_ROOT</code>.</p>
+<h2>Recursive queries</h2>
+<p>We can achieve hierarchical queries using CTE recursive queries. A recursive query is one that is defined by a <code>UNION ALL</code> with an initialization <code>fullselect</code> that seeds the recursion. The iterative (recursive) <code>fullselect</code> contains a direct reference to itself in the <code>FROM</code> clause. See the following code:</p>
+<pre><code class="language-sql">WITH RECURSIVE &lt;tab_name&gt;(column_list)
+AS
+(
+    -- seed query
+    Anchor query  
+    UNION ALL
+    -- Recursive member that references &lt;tab_name&gt;.
+    recursive_query  
+)
+-- references expression name
+SELECT *
+FROM &lt;tab_name&gt; ;
+</code></pre>
+<p>Let’s go through various use cases of Oracle hierarchical queries and achieve similar functionality using recursive SQL in PostgreSQL.</p>
+<h2>Scenario 1: Display employee level along with other details</h2>
+<p>The keyword <code>Level</code> describes the depth of node in the hierarchy. The first level is the root of hierarchy.</p>
+<p>The following code shows our Oracle query:</p>
+<pre><code class="language-sql">SELECT   emp_no,ename,job,level
+FROM hier_test
+  CONNECT BY PRIOR emp_no = manager_no
+  START WITH manager_no IS NULL
+  order by level ;
+</code></pre>
+<p>The following screenshot shows our results.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image007-1.png" /></p>
+<p>In PostgreSQL, the non-recursive part generates the root of the hierarchy (top-down), which is the employee with no manager ( <code>manager_no is null</code>) or with a specific manager (<code>manager_n = 10</code>). The recursive part generates the hierarchy by joining the main table with the output of the non-recursive query until the join condition (<code>e.manager_no = c.emp_no</code>) is true. See the following PostgreSQL query:</p>
+<pre><code class="language-sql">WITH RECURSIVE cte AS (
+  SELECT emp_no, ename,job, manager_no, 1 AS level
+  FROM   hier_test
+  where manager_no is null
+  UNION  ALL
+  SELECT e.emp_no, e.ename, e.job,e.manager_no, c.level + 1
+  FROM   cte c
+  JOIN   hier_test e ON e.manager_no = c.emp_no
+  )
+  SELECT emp_no,ename,job,level
+  FROM   cte
+  order by level;
+</code></pre>
+<p>We get the following output.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image009.png" /></p>
+<h2>Scenario 2: Hierarchical queries with SYS_CONNECT_BY_PATH</h2>
+<p>The keyword <a href="https://docs.oracle.com/cd/B19306_01/server.102/b14200/functions164.htm#i1038266">SYS_CONNECT_BY_PATH</a> returns the path of a column value from root to node, with column values separated by char(delimiter) for each row returned by the CONNECT BY condition.</p>
+<p>Use the following Oracle query:</p>
+<pre><code class="language-sql">SELECT  emp_no,ename,job,level,SYS_CONNECT_BY_PATH(ename,';')
+FROM hier_test
+CONNECT BY PRIOR  emp_no = manager_no
+START WITH manager_no is null
+order by level ;
+</code></pre>
+<p>We get the following results.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image011.png" /></p>
+<p>In PostgreSQL, we can achieve a functionality similar to <code>SYS_CONNECT_BY_PATH</code> by concatenating the parent and child record attributes with a char/delimiter in every iteration. See the following code:</p>
+<pre><code class="language-sql">WITH RECURSIVE cte(emp_no, manager_no, ename,job, level, path)
+AS (
+  SELECT emp_no, manager_no, ename, job,1 AS level,
+  ';'||ename AS path
+    FROM hier_test
+    WHERE manager_no is null
+UNION ALL
+  SELECT e.emp_no, e.manager_no, e.ename,e.job, c.level + 1 AS level,
+  c.path||';'||e.ename AS path
+FROM hier_test e, cte c
+    WHERE e.manager_no = c.emp_no
+)
+SELECT emp_no ,ename ,job,level,path
+FROM cte 
+order by level,emp_no;
+</code></pre>
+<p>We get the following output.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image013.png" /></p>
+<h2>Scenario 3: Hierarchical queries with NOCYCLE</h2>
+<p>The <code>NOCYCLE</code> parameter instructs Oracle Database to return rows from a query even if a <code>CONNECT BY LOOP</code> exists in the data.</p>
+<p>If there is data in which the child is the parent and the parent is the child, then the hierarchical query goes into a data loop. The <code>NOCYCLE</code> keyword helps us avoid this loop.</p>
+<p>To create a cycle in our data, we added a record of another employee as <code>emp_no</code> 13 with their manager as <code>emp_no</code> 14. With our new record, the sample data looks like the following screenshot.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image015-1.png" /></p>
+<p>When you run the SQL code from the previous scenario in Oracle without adding <code>NOCYCLE</code>, you encounter an error:</p>
+<pre><code class="language-sql">SELECT  emp_no,ename,job,level,SYS_CONNECT_BY_PATH(ename,';')
+FROM hier_test
+CONNECT BY PRIOR  emp_no = manager_no
+START WITH manager_no is null
+order by level ;
+</code></pre>
+<p>The following screenshot shows our output.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image017.png" /></p>
+<p>Adding the <code>NOCYCLE</code> keyword in the Oracle query gives you expected results. See the following code:</p>
+<pre><code class="language-sql">SELECT  emp_no,ename,job,level,SYS_CONNECT_BY_PATH(ename,';')
+FROM hier_test
+CONNECT BY NOCYCLE PRIOR  emp_no = manager_no
+START WITH manager_no is null
+order by level ;
+</code></pre>
+<p>We get the following results.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image019.png" /></p>
+<p>In PostgreSQL, we use two fields, <code>route</code> and <code>cycle</code>, to achieve functionality similar to <code>NOCYCLE</code><em>.</em><code>route</code> is an array of already visited values and <code>cycle</code> is a flag that gets set based on if a value is already present in <code>route</code> and the condition <code>cycle = false</code> filters out cyclic records. See the following code:</p>
+<pre><code class="language-sql">WITH RECURSIVE cte(emp_no, manager_no, ename,job,  level, route,cycle, path)
+AS (
+  SELECT emp_no, manager_no, ename, job,1 AS level, array[emp_no] AS route,false AS cycle,
+  ';'||ename AS path
+  FROM hier_test
+  WHERE manager_no is null
+UNION ALL
+  SELECT e.emp_no, e.manager_no, e.ename,e.job, c.level + 1 AS level,c.route || e.emp_no ,e.emp_no = ANY(c.route) as cycle,
+  c.path||';'||e.ename AS path
+FROM hier_test e, cte c
+    WHERE e.manager_no = c.emp_no AND cycle = false
+)
+SELECT emp_no,ename,job,level,path
+FROM cte
+WHERE cycle = false ;
+</code></pre>
+<p>The following screenshot shows our output.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image021.png" /></p>
+<h2>Scenario 4: Hierarchical queries with ORDER SIBLINGS BY</h2>
+<p>The optional <a href="https://docs.oracle.com/cd/B19306_01/server.102/b14200/statements_10002.htm#i2171079">SIBLINGS</a> keyword specifies an order that first sorts the parent rows, then sorts the child rows of each parent for each level within the hierarchy. See the following Oracle query:</p>
+<pre><code class="language-sql">SELECT emp_no,ename,job,manager_no,level
+ from hier_test
+ start with manager_no is null
+ CONNECT BY nocycle PRIOR  emp_no = manager_no
+order siblings by ename ;
+</code></pre>
+<p>The following screenshot shows our results.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image023-1.png" /></p>
+<p>In PostgreSQL, we can achieve a functionality similar to <code>ORDER BY SIBLINGS</code> by ordering the CTE output by path. The path is a concatenation of attributes mentioned in the ORDER BY clause in the Oracle query.</p>
+<p>In the following PostgreSQL query, the path attribute has <code>ename</code> (<code>emp_no</code> is optionally included to handle scenarios of different <code>emp_no</code> values with the same <code>ename</code> under the same manager):</p>
+<pre><code class="language-sql">WITH RECURSIVE cte(emp_no, manager_no, ename,job,  level, route,cycle, path)
+AS (
+  SELECT
+        emp_no, manager_no, ename, job,1 AS level, array[emp_no] AS route,false AS cycle,
+  ';'||ename||emp_no AS path
+  FROM hier_test
+  WHERE manager_no is null
+UNION ALL
+  SELECT
+    e.emp_no, e.manager_no, e.ename,e.job, c.level + 1 AS level,c.route || e.emp_no ,e.emp_no = ANY(c.route) as cycle,
+  c.path||';'||e.ename||e.emp_no  AS path
+FROM hier_test e, cte c
+    WHERE e.manager_no = c.emp_no AND cycle = false
+)
+SELECT
+    emp_no,ename,job,manager_no,level
+FROM cte
+WHERE cycle = false
+ORDER  BY path,emp_no ;
+</code></pre>
+<p>We get the following output.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image025.png" /></p>
+<h2>Scenario 5: Hierarchical queries with CONNECT_BY_ISLEAF</h2>
+<p>The <a href="https://docs.oracle.com/cd/B19306_01/server.102/b14200/pseudocolumns001.htm#i1009434">CONNECT_BY_ISLEAF</a> pseudo column returns <code>1</code> if the current row is a leaf of the tree defined by the CONNECT BY condition. Otherwise it returns <code>0</code>. This information indicates whether a given row can be further expanded to show more of the hierarchy.</p>
+<p>Use the following Oracle query:</p>
+<pre><code class="language-sql">SELECT emp_no,ename,job,manager_no,level,SYS_CONNECT_BY_PATH (ename,';') PATH,CONNECT_BY_ISLEAF  ISLEAF
+ from hier_test
+ start with manager_no is null
+ CONNECT BY nocycle PRIOR  emp_no = manager_no
+order siblings by job ;
+</code></pre>
+<p>We get the following results.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image027.png" /></p>
+<p>In PostgreSQL, we can achieve a functionality similar to <code>CONNECT_BY_ISLEAF</code> by checking whether the child node is a part of the parent nodes returned by the CTE or not. See the following code:</p>
+<pre><code class="language-sql">WITH RECURSIVE cte(emp_no, manager_no, ename,job,  level, route,cycle, path)
+AS (
+  SELECT
+        emp_no, manager_no, ename, job,1 AS level, array[emp_no] AS route,false AS cycle, ';'||ename AS path,  ';'||job||emp_no AS ordersnblpath ,emp_no as root_id
+  FROM hier_test
+  WHERE manager_no is null
+UNION ALL
+  SELECT
+    e.emp_no, e.manager_no, e.ename,e.job, c.level + 1 AS level,c.route || e.emp_no ,e.emp_no = ANY(c.route) as cycle, c.path||';'||e.ename AS path,
+  c.ordersnblpath||';'||e.job||e.emp_no AS ordersnblpath, c.root_id
+FROM hier_test e, cte c
+    WHERE e.manager_no = c.emp_no AND cycle = false
+)
+SELECT
+    emp_no,ename,job,manager_no,level,path
+    , not exists (select * from cte p where p.manager_no = e.emp_no and cycle = false) as is_leaf
+FROM cte e
+WHERE cycle = false
+ORDER BY ordersnblpath,emp_no ;
+</code></pre>
+<p>The following screenshot shows our output.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image029.png" /></p>
+<h2>Scenario 6: Hierarchical queries with CONNECT_BY_ROOT</h2>
+<p><a href="https://docs.oracle.com/cd/B19306_01/server.102/b14200/operators004.htm#i1035022">CONNECT_BY_ROOT</a> is a unary operator that is valid only in hierarchical queries. When you qualify a column with this operator, Oracle returns the column value using data from the root row. See the following query:</p>
+<pre><code class="language-sql">SELECT emp_no,ename,job,manager_no,level,SYS_CONNECT_BY_PATH (ename,';') PATH,CONNECT_BY_ROOT ename
+ from hier_test
+ start with manager_no is null
+ CONNECT BY nocycle PRIOR  emp_no = manager_no;
+</code></pre>
+<p>We get the following results.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image031.png" /></p>
+<p>In PostgreSQL, we can achieve functionality similar to <code>CONNECT_BY_ROOT</code> by using <code>substr</code> or a split function on the path attributed in the CTE output:</p>
+<pre><code class="language-sql">WITH RECURSIVE cte(emp_no, manager_no, ename,job,level, route,cycle, path)
+AS (
+  SELECT
+        emp_no, manager_no, ename, job,1 AS level, array[emp_no] AS route,false AS cycle,
+  ';'||ename AS path ,emp_no as root_id
+  FROM hier_test
+  WHERE manager_no is null
+UNION ALL
+  SELECT
+    e.emp_no, e.manager_no, e.ename,e.job, c.level + 1 AS level,c.route || e.emp_no ,e.emp_no = ANY(c.route) as cycle,
+  c.path||';'||e.ename AS path, c.root_id
+FROM hier_test e, cte c
+    WHERE e.manager_no = c.emp_no AND cycle = false
+)
+SELECT
+    emp_no,ename,job,manager_no,level,path
+       ,SPLIT_PART(path,';',2) root
+FROM cte e
+WHERE cycle = false
+ORDER  BY path, emp_no ; 
+</code></pre>
+<p>We get the following output.</p>
+<p><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/DBBLOG-2220-image033.png" /></p>
+<h2>Considerations</h2>
+<p>Consider the following when using this solution in your environment:</p>
+<ul>
+<li>The dataset we used for this post is simple in nature and may not reflect the data complexity of your environment</li>
+<li>Not all scenarios or keywords of Oracle’s hierarchical queries are discussed in this post</li>
+<li>Test the solution and queries you’re going to build referencing the sample queries for functional and performance requirements</li>
+</ul>
+<h2>Conclusion</h2>
+<p>In this post, we demonstrated via sample queries how you can migrate Oracle hierarchical queries using keywords <code>LEVEL</code>, <code>NOCYCLE</code>, <code>SYS_CONNECT_BY_PATH</code>, <code>ORDER SIBLINGS BY</code>, <code>CONNECT_BY_ISLEAF</code>, and <code>CONNECT_BY_ROOT</code> to PostgreSQL. We also talked about use cases and shortcomings of the <code>tablefunc</code> extension when migrating Oracle hierarchical queries.</p>
+<p>Check out <a href="https://aws.amazon.com/blogs/database/database-migration-what-do-you-need-to-know-before-you-start/">Database Migration—What Do You Need to Know Before You Start?</a> to get started. Also review the recommended best practices, including <a href="https://aws.amazon.com/blogs/database/best-practices-for-migrating-an-oracle-database-to-amazon-rds-postgresql-or-amazon-aurora-postgresql-migration-process-and-infrastructure-considerations/">the migration process and infrastructure considerations</a>, <a href="https://aws.amazon.com/blogs/database/best-practices-for-migrating-an-oracle-database-to-amazon-rds-postgresql-or-amazon-aurora-postgresql-source-database-considerations-for-the-oracle-and-aws-dms-cdc-environment/">source database considerations</a>, and <a href="https://aws.amazon.com/blogs/database/best-practices-for-migrating-an-oracle-database-to-amazon-rds-postgresql-or-amazon-aurora-postgresql-target-database-considerations-for-the-postgresql-environment/">target database considerations for the PostgreSQL environment</a>.</p>
+<p>If you have any questions, comments, or other feedback, share your thoughts on the <a href="https://forums.aws.amazon.com/forum.jspa?forumID=227">Amazon Aurora Discussion Forums</a>.</p>
+<h3>About the Authors</h3>
+<p><strong><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/Rakesh-Raghav.png" />Rakesh Raghav</strong> is a Database Specialist with the AWS Professional Services in India, helping customers have a successful cloud adoption and migration journey. He is passionate about building innovative solutions to accelerate their database journey to cloud.</p>
+<p><strong><img alt="" src="../../assets/aws-migrate-oracle-hierarchical-queries-to-aurora-postgresql/Anuradha-Chintha.jpg" />Anuradha Chintha</strong> is a Lead Consultant with Amazon Web Services. She works with customers to build scalable, highly available, and secure solutions in the AWS Cloud. Her focus area is homogeneous and heterogeneous database migrations.</p></body>
+</html>

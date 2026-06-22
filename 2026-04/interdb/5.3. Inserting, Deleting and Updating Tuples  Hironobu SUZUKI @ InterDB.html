@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>5.3. Inserting, Deleting and Updating Tuples  Hironobu SUZUKI @ InterDB</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7;color:#333}pre{background:#f5f5f5;padding:16px;border-radius:6px;overflow-x:auto}code{font-size:0.9em}img{max-width:100%}a{color:#0366d6}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:16px 0;padding:0 16px;color:#666}</style>
+</head>
+<body><h1>5.3. Inserting, Deleting and Updating Tuples</h1>
+<p>This section describes how tuples are inserted, deleted, and updated. Then, the <strong>Free Space Map (FSM)</strong>, which is used to insert and update tuples, is briefly described.</p>
+<p>To focus on tuples, page headers and line pointers are not represented in the following. Figure 5.3 shows an example of how tuples are represented.</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql05/fig-5-03.png" /></p>
+<p>Figure 5.3. Representation of tuples.</p>
+<h2>5.3.1. Insertion</h2>
+<p>With the insertion operation, a new tuple is inserted directly into a page of the target table (Figure 5.4).</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql05/fig-5-04.png" /></p>
+<p>Figure 5.4. Tuple insertion.</p>
+<p>Suppose that a tuple is inserted in a page by a transaction whose txid is 99. In this case, the header fields of the inserted tuple are set as follows.</p>
+<ul>
+<li>Tuple_1:<ul>
+<li><strong>t_xmin</strong> is set to 99 because this tuple is inserted by txid 99.<ul>
+<li><strong>t_xmax</strong> is set to 0 because this tuple has not been deleted or updated.</li>
+<li><strong>t_cid</strong> is set to 0 because this tuple is the first tuple inserted by txid 99.</li>
+<li><strong>t_ctid</strong> is set to (0,1), which points to itself, because this is the latest tuple.</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>PostgreSQL provides the ‘==pageinspect==’ extension, which is a contribution module, to show the contents of the database pages.</p>
+<pre><code class="language-sql">testdb=# CREATE EXTENSION pageinspect;
+CREATE EXTENSION
+testdb=# CREATE TABLE tbl (data text);
+CREATE TABLE
+testdb=# INSERT INTO tbl VALUES('A');
+INSERT 0 1
+testdb=# SELECT lp as tuple, t_xmin, t_xmax, t_field3 as t_cid, t_ctid
+                FROM heap_page_items(get_raw_page('tbl', 0));
+ tuple | t_xmin | t_xmax | t_cid | t_ctid
+-------+--------+--------+-------+--------
+     1 |     99 |      0 |     0 | (0,1)
+row
+</code></pre>
+<h2>5.3.2. Deletion</h2>
+<p>In the deletion operation, the target tuple is deleted logically. The value of the txid that executes the DELETE command is set to the t_xmax of the tuple (Figure 5.5).</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql05/fig-5-05.png" /></p>
+<p>Figure 5.5. Tuple deletion.</p>
+<p>Suppose that tuple Tuple_1 is deleted by txid 111. In this case, the header fields of Tuple_1 are set as follows:</p>
+<ul>
+<li>Tuple_1:<ul>
+<li><strong>t_xmax</strong> is set to 111.</li>
+</ul>
+</li>
+</ul>
+<p>If txid 111 is committed, Tuple_1 is no longer required. Generally, unneeded tuples are referred to as <strong>dead tuples</strong> in PostgreSQL.</p>
+<p>Dead tuples should eventually be removed from pages. Cleaning dead tuples is referred to as <strong>VACUUM</strong> processing, which is described in <code>Chapter 6</code>.</p>
+<h2>5.3.3. Update</h2>
+<p>In the update operation, PostgreSQL logically deletes the latest tuple and inserts a new one (Figure 5.6).</p>
+<p><img alt="" src="https://www.interdb.jp/pg/pgsql05/fig-5-06.png" /></p>
+<p>Figure 5.6. Update the row twice.</p>
+<p>Suppose that the row, which has been inserted by txid 99, is updated twice by txid 100.</p>
+<p>When the first UPDATE command is executed, Tuple_1 is logically deleted by setting txid 100 to the <em>t_xmax</em>, and then Tuple_2 is inserted. Then, the <em>t_ctid</em> of Tuple_1 is rewritten to point to Tuple_2. The header fields of both Tuple_1 and Tuple_2 are as follows:</p>
+<ul>
+<li>Tuple_1:<ul>
+<li><strong>t_xmax</strong> is set to 100.<ul>
+<li><strong>t_ctid</strong> is rewritten from (0, 1) to (0, 2).</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Tuple_2:<ul>
+<li><strong>t_xmin</strong> is set to 100.<ul>
+<li><strong>t_xmax</strong> is set to 0.</li>
+<li><strong>t_cid</strong> is set to 0.</li>
+<li><strong>t_ctid</strong> is set to (0,2).</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>When the second UPDATE command is executed, as in the first UPDATE command, Tuple_2 is logically deleted and Tuple_3 is inserted. The header fields of both Tuple_2 and Tuple_3 are as follows:</p>
+<ul>
+<li>Tuple_2:<ul>
+<li><strong>t_xmax</strong> is set to 100.<ul>
+<li><strong>t_ctid</strong> is rewritten from (0, 2) to (0, 3).</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Tuple_3:<ul>
+<li><strong>t_xmin</strong> is set to 100.<ul>
+<li><strong>t_xmax</strong> is set to 0.</li>
+<li><strong>t_cid</strong> is set to 1.</li>
+<li><strong>t_ctid</strong> is set to (0,3).</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>As with the delete operation, if txid 100 is committed, Tuple_1 and Tuple_2 will be dead tuples, and, if txid 100 is aborted, Tuple_2 and Tuple_3 will be dead tuples.</p>
+<h2>5.3.4. Free Space Map</h2>
+<p>When inserting a heap or an index tuple, PostgreSQL uses the <strong>Free Space Map (FSM)</strong> of the corresponding table or index to select the page which can be inserted into.</p>
+<p>As mentioned in <code>Section 1.2.3</code>, all tables and indexes have respective FSMs. Each FSM stores the information about the free space capacity of each page within the corresponding table or index file.</p>
+<p>All FSMs are stored with the suffix ‘fsm’, and they are loaded into shared memory if necessary.</p>
+<p>The extension <code>pg_freespacemap</code> provides the freespace of the specified table/index. The following query shows the freespace ratio of each page in the specified table.</p>
+<pre><code class="language-sql">testdb=# CREATE EXTENSION pg_freespacemap;
+CREATE EXTENSION
+
+testdb=# SELECT *, round(100 * avail/8192 ,2) as &quot;freespace ratio&quot;
+                FROM pg_freespace('accounts');
+ blkno | avail | freespace ratio
+-------+-------+-----------------
+     0 |  7904 |           96.00
+     1 |  7520 |           91.00
+     2 |  7136 |           87.00
+     3 |  7136 |           87.00
+     4 |  7136 |           87.00
+     5 |  7136 |           87.00
+....
+</code></pre>
+<p>[[LLM Wiki/raw/clippings/中译-5.3. Inserting, Deleting and Updating Tuples  Hironobu SUZUKI @ InterDB.md|中译]]</p></body>
+</html>
