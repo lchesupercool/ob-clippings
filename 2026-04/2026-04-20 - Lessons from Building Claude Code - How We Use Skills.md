@@ -1,3 +1,6 @@
+---
+---
+
 # Lessons from Building Claude Code: How We Use Skills
 
 - Author: Thariq (@trq212)

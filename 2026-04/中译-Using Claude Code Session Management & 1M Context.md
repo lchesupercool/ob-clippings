@@ -1,3 +1,6 @@
+---
+---
+
 ![Image](https://pbs.twimg.com/media/HF-p1RUbEAIH-6t?format=jpg&name=large)
 
 在我最近与 Claude Code 用户的交流中，有一个主题反复出现：1M token 的 context window 是一把双刃剑。

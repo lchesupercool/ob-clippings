@@ -1,3 +1,6 @@
+---
+---
+
 # Hermes Headless Sync Test
 
 - Created: 2026-06-13 18:24:58 CST

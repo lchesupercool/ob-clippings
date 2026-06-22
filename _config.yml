@@ -1,0 +1,6 @@
+title: Obsidian Clippings
+description: Public clippings exported from Obsidian
+markdown: GFM
+exclude:
+  - README.md
+  - .gitignore

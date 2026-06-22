@@ -1,3 +1,6 @@
+---
+---
+
 # Claude Code 团队内部的 5 条工作原则
 
 > 来源: [@Khazix0918 on X](https://x.com/khazix0918/status/2062027075524112503)

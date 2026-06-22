@@ -1,3 +1,6 @@
+---
+---
+
 # 构建 Claude Code 的经验：我们如何使用 Skills
 
 - 作者：Thariq (@trq212)
