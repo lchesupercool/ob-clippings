@@ -1,0 +1,134 @@
+---
+title: "我认为 Anthropic 和 OpenAI 已经找到了 product-market fit"
+source: "https://simonwillison.net/2026/May/27/product-market-fit/"
+author: "Simon Willison"
+published: "2026-05-27"
+saved: "2026-05-28"
+tags: [clipping, ai, product-market-fit, llm]
+---
+
+# 我认为 Anthropic 和 OpenAI 已经找到了 product-market fit
+
+2026 年 5 月 27 日
+
+Anthropic 被[强烈传闻](https://techcrunch.com/2026/05/20/anthropic-says-its-about-to-have-its-first-profitable-quarter/)即将迎来第一个盈利季度。也有[一些故事在流传](https://www.theinformation.com/newsletters/applied-ai/uber-cto-shows-claude-code-can-blow-ai-budgets)：公司因为员工使用 LLM 而发现账单变得惊人昂贵。我认为这是因为 OpenAI 和 Anthropic 都已经找到了 product-market fit。
+
+- [企业客户现在正在支付 API 价格](https://simonwillison.net/2026/May/27/product-market-fit/#enterprise-customers-are-now-paying-api-prices)
+
+- [我认为它们已经找到了 product-market fit](https://simonwillison.net/2026/May/27/product-market-fit/#i-think-they-ve-found-product-market-fit)
+
+- [而且它们正在加速扩张](https://simonwillison.net/2026/May/27/product-market-fit/#and-they-re-ramping-up)
+
+- [围绕这件事的 AI 失败叙事其实相当薄弱](https://simonwillison.net/2026/May/27/product-market-fit/#the-ai-failure-stories-around-this-are-pretty-thin)
+
+- [我们也知道这些实验室正在花很多钱](https://simonwillison.net/2026/May/27/product-market-fit/#we-also-know-the-labs-are-spending-a-lot)
+
+- [API 收入正在变得不那么重要](https://simonwillison.net/2026/May/27/product-market-fit/#api-revenue-is-becoming-less-important)
+
+- [4 月是一个新的拐点](https://simonwillison.net/2026/May/27/product-market-fit/#april-is-a-new-inflection-point)
+
+## 企业客户现在正在支付 API 价格
+
+我目前订阅了 Anthropic 的 100 美元/月 Max 套餐，以及 OpenAI 的 100 美元/月 Pro 套餐。如果你是 coding agent 的重度用户，这些套餐非常划算。我刚在自己的笔记本上运行了 [ccusage](https://github.com/ryoppippi/ccusage) 工具，用来估算如果过去 30 天按 API token 付费，我会花多少钱，结果是：
+
+- Anthropic Claude Code：1,199.79 美元
+
+- OpenAI Codex：980.37 美元
+
+也就是说，我用 200 美元买到了价值 2,180.16 美元的 token——一点也不差！我算是这些工具的中度偏重用户，但我当然没有一天到晚每小时都在跑 agent。
+
+我原本以为，大量使用 agent 的公司也能拿到类似折扣。结果证明，在这一点上我*错得不能再错*。
+
+我还没能追踪到确切日期，但在过去六个月中的某个时间点，Anthropic 把他们的 Enterprise 计划改成了 20 美元/席位/月，外加按 API 价格为使用量付费；而这个计划最初在 2025 年 8 月的说法是[“Claude seats include enough usage for a typical workday”](https://www.anthropic.com/news/claude-code-on-team-and-enterprise)。[The Information 关于这次变化的报道](https://www.theinformation.com/articles/anthropic-changes-pricing-bill-firms-based-ai-use-amid-compute-crunch)日期是 2026 年 4 月 14 日，但其中引用 Anthropic 发言人的说法称，定价变化发生在 2025 年 11 月。现有客户会在续约时发现这个变化。
+
+OpenAI 在 4 月也做了类似的定价调整。[Codex rate card](https://help.openai.com/en/articles/20001106-codex-rate-card)（[Internet Archive 副本](https://web.archive.org/web/20260519062438/https://help.openai.com/en/articles/20001106-codex-rate-card)）目前写道：
+
+> **Note**：2026 年 4 月 2 日，我们更新了 Codex 定价，使其与 API token 使用量对齐，而不是按消息定价。这一变化适用于新的和现有的 Plus、Pro、ChatGPT Business，以及新的 ChatGPT Enterprise 计划。
+
+> 2026 年 4 月 23 日，我们也把这次更新应用到了所有现有的 ChatGPT Enterprise 计划，包括 Edu、Health、Gov 和 ChatGPT for Teachers。
+
+这稍微有点难解读，因为他们用 “credits” 报价，但据我理解，这些 credit 成本与相应模型列出的 API token 成本完全一致。
+
+所有这些合起来意味着：截至 2026 年 4 月，OpenAI Codex 和 Anthropic Claude Code/Cowork 的 “Enterprise” 成本都已经等同于公开列出的 API 价格。
+
+GPT-5.5（4 月 23 日发布）的 API 价格是 GPT-5.4 的 2 倍。考虑到 Opus 4.7（4 月 16 日）的新 tokenizer，它的价格大约是 Opus 4.6 的 [1.4 倍](https://simonwillison.net/2026/Apr/20/claude-token-counts/)。
+
+所以在 4 月，两家领先模型公司都发布了 API 价格更高的新前沿模型，*并且*两家公司现在都有办法把企业客户（通常签一年期合同）锁定在这些 API 价格上，而不是过去那种极高折扣。
+
+## 我认为它们已经找到了 product-market fit
+
+为什么突然采取如此激进的定价动作？Anthropic 和 OpenAI 都在筹备 IPO，但我怀疑还有一个更重要的因素：我认为它们终于通过 Claude Code/Cowork 和 Codex 所代表的 coding/general-purpose agent 产品，找到了 product-market fit。
+
+ChatGPT 这样的工具极其流行，但这种极高人气一直很难转化为收入。2 月，[OpenAI 宣称](https://finance.yahoo.com/news/chatgpt-almost-1-billion-weekly-212157499.html) ChatGPT 每周活跃用户超过 9 亿，但其中只有 5,000 万——也就是 5.6%——是付费消费者订阅用户。
+
+每个用户每月收 10 到 20 美元是一门还可以的生意，但如果要覆盖[1 万亿美元基础设施](https://openai.com/global-affairs/seizing-the-ai-opportunity/)成本，你需要 10 到 20 亿订阅用户持续付费四年。
+
+如果公司愿意为每个用户每月花 200 美元以上，那就快得多——而且如上所述，作为 power user，我现在已经到了每家供应商约 1,000 美元/月的 API 成本水平。
+
+Coding agents 确实改变了一切。这些工具会消耗*远多得多*的 token，但它们也正在迅速成为高薪专业人士日常工作的主力工具。现在这仍然主要发生在软件工程师身上，但 coding agent 本质上是一个可以自动化任何“通过在电脑里输入命令完成的事情”的工具……所以它显然适用于范围更广的熟练知识工作者。
+
+正如我已经在本站[详细讨论过](https://simonwillison.net/tags/november-2025-inflection/)的那样，2025 年 11 月发布的模型把 agent 提升到了真正有用的程度。现在我们已经用了六个月来适应这个想法——公司开始在这项技术上花真金白银也就不足为奇了。
+
+你可以说，ChatGPT 在 2023 年 2 月成为[史上增长最快的消费者应用](https://www.reuters.com/technology/chatgpt-sets-record-fastest-growing-user-base-analyst-note-2023-02-01/)时就已经实现了 product-market fit……但那时它当然还没有赚到真正的钱。Coding agents 加上企业定价，标志着这些公司开始产生*非常*真实的收入。也许甚至足以开始覆盖它们的成本！
+
+## 而且它们正在加速扩张
+
+作为企业 agent 代表这些公司 product-market fit 的进一步证据，可以看看它们公开招聘的职位。
+
+OpenAI 现在有 [703 个开放岗位](https://openai.com/careers/search/)，其中我会把 229 个（32.6%）归类为与企业销售和支持相关——客户经理、“Go To Market”、“Forward Deployed Engineers”等等。
+
+Anthropic 有 [390 个开放岗位](https://www.anthropic.com/careers/jobs)，其中 105 个（26.9%）在我看来偏企业方向。
+
+颇具讽刺意味的是，这些 AI 实验室选择了一种高度依赖人力劳动的商业模式——企业销售合同不会自己成交，背后需要大量人类参与！
+
+（我用 Claude Code 抓取它们的招聘网站来完成这项分析，然后让它使用 Datasette 的 [JSON API](https://docs.datasette.io/en/latest/json_api.html) 把数据导入 Datasette Cloud，接着我用 [Datasette Agent](https://agent.datasette.io/) 做分析，[导出结果在这里](https://gist.github.com/simonw/5632d208d76b3c8b34f1fdbaf69eb1b8#agent-4)。Dogfood！）
+
+## 围绕这件事的 AI 失败叙事其实相当薄弱
+
+我开始研究这件事，是因为[越来越多](https://news.ycombinator.com/item?id=48287025#48287219)故事声称，大公司正在拉响警报，因为它们的 AI 使用成本已经涨得太高。
+
+在我看来，其中被引用最多的故事都相当夸张。
+
+讨论最多的是 Uber。根据[这篇报道](https://www.theinformation.com/newsletters/applied-ai/uber-cto-shows-claude-code-can-blow-ai-budgets)，CTO Praveen Neppalli Naga 表示，Uber “在 2026 年刚过几个月就用完了全年的 AI 预算”，主要原因是 Claude Code。
+
+考虑到 Claude Code 是到 11 月才变得*真正*好用，我完全不意外：2025 年制定的预算，可能没能预测 2026 年对这个工具的需求！
+
+这个 Uber 故事又被 Uber COO Andrew Macdonald 在 Rapid Response 播客中的评论进一步发酵。我找到了[那一段](https://www.youtube.com/watch?v=y_mQ6xLcKyc&t=1616s)，其实里面并没有多少内容。Andrew 是这么说的：
+
+> 但有时你会去和资深工程领导聊，你会问：好吧，因为上个季度 25% 的代码提交来自 Claude Code 带来的生产力提升，有多少原本被砍掉的项目被重新提到了优先级线上？
+
+> 这个联系还不存在，对吧？我觉得也许隐含地说，确实有更多东西被交付了。但要在这些统计数据之一和“好吧，现在我们真的产出了大约 25% 更多有用的消费者功能”之间画出一条线，是非常困难的，对吧？这条线很难画出来。
+
+不知怎么地，这段话变成了类似 [Uber’s COO says it’s getting harder to justify the money spent on AI tokenmaxxing](https://www.businessinsider.com/uber-coo-andrew-macdonald-ai-token-spending-harder-justify-2026-5) 这样的标题，因为关于 AI 失败的故事市场仍然巨大。
+
+另一个围绕这件事的热门故事是 [Microsoft starts canceling Claude Code licenses](https://www.theverge.com/tech/930447/microsoft-claude-code-discontinued-notepad)，表面上是为了鼓励他们的工程师 dogfood 自家的 Copilot CLI agent——但 The Verge 记者 Tom Warren 说，“消息人士告诉我，这个决定也有财务因素”，触发点是微软 6 月 30 日财年的结束。
+
+我认为这两个故事都支持我的 “product-market fit” 假设。我听过的关于产品定价的最佳建议是：你的客户应该先倒吸一口凉气，然后还是说 yes。Uber 的预算超支和 Microsoft 的席位取消，看起来就是这种效果在实践中的体现。
+
+## 我们也知道这些实验室正在花很多钱
+
+大型 AI 实验室在训练和推理上都会花费数十亿美元。可信数字很难获得，但奇怪的是，最近的 [SpaceX S-1](https://www.sec.gov/Archives/edgar/data/1181412/000162828026036936/spaceexplorationtechnologi.htm) 给了我们一个关于相关规模的巨大线索：
+
+> [...] 2026 年 5 月，我们与 **Anthropic PBC**（“Anthropic”），一家 AI 研究与开发公益公司，签订了**云服务协议**，涉及访问 **COLOSSUS 和 COLOSSUS II 的计算容量**。根据这些协议，该客户**已同意每月向我们支付 12.5 亿美元**，直至 2029 年 5 月 [...]
+
+[Anthropic 的公告](https://www.anthropic.com/news/higher-limits-spacex)称，这笔交易意味着他们可以“提高 Claude Code 和 Claude API 的使用限制”，这强烈暗示 Colossus 被用于推理，而不是模型训练。
+
+Anthropic 已经从其他供应商那里获得了大量算力。它们愿意仅为*一个*供应商的额外容量每月支付 12.5 亿美元，这暗示了这些推理预算已经变得多么庞大。
+
+## API 收入正在变得不那么重要
+
+过去两年里，我的印象是 OpenAI 的收入更多来自订阅，而 Anthropic 的收入更多来自 API。
+
+Anthropic 的 API 收入历史上相当依赖少数几个大型 API 客户——[VentureBeat 2025 年 8 月的这篇报道](https://venturebeat.com/ai/anthropic-revenue-tied-to-two-customers-as-ai-pricing-war-threatens-margins)引用了“熟悉此事的消息人士”的说法，称仅 Cursor 和 GitHub Copilot 就贡献了该公司当时 40 亿美元收入中的 12 亿美元。
+
+如今，有传闻称 Anthropic 第二季度收入将达到 [109 亿美元](https://www.wsj.com/tech/ai/mind-blowing-growth-is-about-to-propel-anthropic-into-its-first-profitable-quarter-7edbf2f4)，甚至可能首次实现运营盈利。
+
+这种转向 Enterprise 的动作表明，实验室们已经意识到真正的钱在于绕开中间商。Anthropic 的 Claude Code 直接与 Cursor 和 Copilot 竞争。难怪 Cursor 正在[投资自己的模型](https://cursor.com/blog/composer-2)！
+
+## 4 月是一个新的拐点
+
+我把 2025 年 11 月称为 [November inflection point](https://simonwillison.net/tags/november-2025-inflection/)，因为那时 GPT-5.1 和 Opus 4.5 结合各自的 coding agent harness，变得*好用*了——好到在过去六个月里，我们一直在适应那些能够可靠完成有用工作的 agent 系统。
+
+我认为 2026 年 4 月是一个新的拐点：这项技术的收入含义开始真正落地，让前沿 AI 实验室受益，同时也对大公司的预算产生实质影响。
+
+等即将到来的 Anthropic 和 OpenAI IPO 的 S-1 文件给出一些真实、经审计、可供我们认真咀嚼的数字时，我们就会确切知道这个时刻到底有多真实。

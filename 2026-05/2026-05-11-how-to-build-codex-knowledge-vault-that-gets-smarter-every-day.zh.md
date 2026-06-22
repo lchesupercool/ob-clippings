@@ -1,0 +1,112 @@
+---
+title: "如何构建一个每天自动变聪明的 Codex 知识库"
+author: "Ziwen (@ziwenxu_)"
+source: "https://x.com/ziwenxu_/status/2053241837453029439?s=52"
+article_url: "https://x.com/ziwenxu_/article/2053241837453029439"
+published: "2026-05-10 06:32 +0800"
+saved: "2026-05-11 07:01:37 +0800"
+tags: [x-twitter, codex, obsidian, knowledge-management, ai-agents]
+---
+
+# 如何构建一个每天自动变聪明的 Codex 知识库
+
+作者：[Ziwen (@ziwenxu_)](https://x.com/ziwenxu_)
+
+![文章图片](../../assets/how-to-build-codex-knowledge-vault-that-gets-smarter-every-day/image-1.jpg)
+
+**别再收藏那些你的 AI 永远看不到的东西了。**
+
+我相信你们大多数人已经听说过面向 LLM 的 Obsidian 知识库。我曾经也长期这样使用它，但我厌倦了这种“关于工作的工作”。手动保持我的上下文和 AI 同步更新，变成了一份我并不想要的第二职业。
+
+现在，我已经把整个循环自动化了。我在 X 上消费的所有内容，只需要点收藏。每天结束时，我的 **Codex** 会自动拉取这些收藏，并把它们作为永久记忆消化掉。我什么都不用做。一切都是自动的。
+
+**问题：上下文债务**
+
+大多数人把知识当成文件柜：存进去，然后忘掉。AI 也有同样的问题。每一次新聊天都是冷启动，因为你的 AI 不知道你的历史。每天早上重新解释你的技术栈和目标，是一种生产力税。
+
+瓶颈不是模型，而是 Context Debt（上下文债务）。
+
+我们正在从“聊天窗口”走向一个持久知识层。你的 Obsidian vault 不应该是一座图书馆；它应该是你个人助手的大脑。
+
+## 五层神经结构
+
+为了让这套系统运转起来，我们不再为人类组织信息，而是开始为机器组织信息。我使用一种扁平架构，让 Codex 能像浏览心理地图一样导航：
+
+- **AGENTS.md：** 这是 Codex 首先读取的主文件。它是你生活里的“全局变量”。它会精确告诉 AI 你是谁、你的 2026 年目标是什么，以及你的不可妥协规则，比如“永远不要给我样板废话”或“在建议任何东西前，始终先检查我的 /notes”。
+- **inbox/：** 暂存区。每篇文章、技术文档或语音笔记都会先落到这里。不需要手动归档，不需要打标签，没有摩擦。这是系统的“原始 RAM”。
+- **notes/：** 这是你的个人 Wikipedia。信息一旦被处理，就会以互相关联的事实形式保存在这里：API schema、框架深度解析、研究论文。这里是“事实来源”。
+- **ideas/：** 这是最重要的部分。这里保存你的原创思考和你的“vibe”。把你独特的逻辑保存在这里，能防止 Codex 给出泛泛的 AI 答案，并迫使它按你的方式解决问题。
+- **projects/：** 工作发生的地方。因为你的项目和笔记放在一起，Codex 可以抓取你三个月前读过的一篇论文中的洞见，并把它应用到你正在发布的代码里。
+
+这个五层结构是你的第一天基线。为了让它生效，我使用 Obsidian 作为本地“大脑”，并使用我构建的自定义 [Codex Skill](https://x.com/ziwenxu_) 来弥合笔记和 LLM 之间的鸿沟。
+
+## 持续精炼规则
+
+不要害怕打破结构。当你进入一个新领域，或遇到一个现有结构容纳不了的复杂概念时，就让你的 agent 为它开辟一个新的空间。
+
+- **创建新上下文：** 如果你正在深入研究一个新框架，或某个特定领域，比如“Local LLM Fine-tuning”，就立刻为它创建一个专用文件夹。
+- **强制更新：** 不要只是移动文件。每次你改变结构时，都要回到 AGENTS.md 或你的主系统提示词，告诉你的 agents：“地图已经改变。下面是我们存储和检索这类特定数据的新逻辑。”
+
+## 构建 24/7 智能助手
+
+知识系统失败的第一原因是捕获摩擦。我构建了一个“被动摄取”系统，所以不是我去“做”这项工作，而是管道在做。
+
+我们不手动收藏，而是使用 Browser-use 或 Codex 中的 Computer Use，每天抓取一次你的数字高亮。这确保你不需要开始一个新习惯，也仍然能够提取你所有的知识。
+
+## X（Twitter）提取 Prompt
+
+```plaintext
+"use @computer Navigate to my X Bookmarks. Extract the content of every thread saved in the last 24 hours. Strip out the ads and engagement bait. Convert the core insights into a clean Markdown file titled YYYY-MM-DD-X-Insights.md and save it to my /inbox."
+```
+
+## YouTube 知识 Prompt
+
+```plaintext
+"Access my YouTube with @computer 'Watch Later' list. For every video added today, pull the full transcript. Use your internal logic to summarize the technical 'How-To' or 'Big Idea' from each. Save these as individual Markdown files in my /inbox so I can search them locally."
+```
+
+## 每日进化 Prompt
+
+```plaintext
+"Audit all new files in the /inbox and /notes from the last 24 hours. Cross-reference them with our roadmap in AGENTS.md.
+MEMORY ENHANCEMENT: Identify new technical patterns or logic I need to internalize for our current projects.
+STRATEGIC SHIFT: Does this new information suggest a better way to execute our current tasks? If so, flag the contradiction.
+IMMEDIATE ACTION: Based on these upgrades, what is the single most high-leverage task for today? Update your internal memory and save the strategy to DAILY-BRIEF.md."
+```
+
+## 每周自我管理 Prompt
+
+```plaintext
+"Analyze all Daily Briefs and new intelligence from the past 7 days.
+EMERGING THESIS: What high-level skill or concept have we mastered this week?
+ARCHITECTURAL EVOLUTION: Reorganize our folders and concepts to reflect our current level of understanding. Create new specialized directories if our focus has shifted.
+FIRMWARE UPGRADE: Rewrite the 'Core Logic' section of AGENTS.md. Integrate everything we’ve learned this week so you start Monday morning as a more capable, more senior version of yourself."
+```
+
+现在，你已经成功实现了一个会自行成长的系统。
+
+你不只是在归档转录稿和收藏；你是在喂养一个有机体。因为这些每日和每周审计，你的 Codex 不只是“拥有”信息，它会用这些信息磨利自己的工具。
+
+## 新生规则：准确性高于自尊
+
+随着你的 vault 增长，agents 会变得“自大”。它们会走捷径。为了解决这个问题，我强制执行 Freshman Rule（新生规则）：
+
+- **引用来源：** 告诉你的 agent，除非它能链接回 /notes 中的某个具体文件，否则不允许做技术决策。如果信息不在 vault 里，agent 必须承认它是在猜。
+- **“先计划”检查点：** 永远不要让 agent 一上来就开始写代码。强制它在碰键盘之前，先基于当前 AGENTS.md 写一个 3 句话的“Battle Plan”。
+- **杀死假设：** 如果某个任务与你三个月前保存的一条笔记相矛盾，agent 不应该试图变得“聪明”。它需要停下来，向你请求裁决。
+
+享受这个完全自主、每天都会变得更聪明的 agent 吧。
+
+这就是“冷启动”的终结。
+
+当我坐到我的 M4 Mac Mini 前时，我的 Codex 已经花了一整晚抓取我的收藏，并更新它的内部逻辑。我醒来面对的不是一块空白屏幕；我醒来时看到的是一个 Jarvis 风格的简报，来自一个在我睡觉时也一直工作的伙伴。
+
+我已经不再“使用” AI。我开始指挥它。把它当成伙伴。把你办公室的钥匙交给它。
+
+关注 [@ziwenxu_](https://x.com/ziwenxu_)，获取更多关于这个系统的技巧、指南工作流和每周综合 prompt。我每天都会发布。
+
+---
+
+来源：[https://x.com/ziwenxu_/status/2053241837453029439?s=52](https://x.com/ziwenxu_/status/2053241837453029439?s=52)
+文章：[https://x.com/ziwenxu_/article/2053241837453029439](https://x.com/ziwenxu_/article/2053241837453029439)
+保存时间：2026-05-11 07:01:37 +0800

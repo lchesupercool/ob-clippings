@@ -1,0 +1,127 @@
+---
+title: CloudNativePG and Crunchy PGO 对比摘要
+source: https://www.gabrielebartolini.it/articles/2026/05/cloudnativepg-and-crunchy-pgo-an-honest-opinionated-comparison/
+saved: 2026-05-19 15:23:37 +0800
+---
+
+# CloudNativePG and Crunchy PGO 对比摘要
+
+作者 Gabriele Bartolini 是 CloudNativePG 联合创始人与维护者，因此明确承认本文不是中立评测，而是“有信息量的偏见”。文章核心观点：Crunchy PGO 是 PostgreSQL on Kubernetes 的先行者，但在 2026 年，Kubernetes 已经足够成熟，CloudNativePG 这种更原生依赖 Kubernetes control plane 的设计，比 PGO + Patroni 的双分布式系统架构更适合作为长期平台。
+
+## 核心对比
+
+### 1. 历史地位
+
+Crunchy Data 在 2017 年发布了最早的 PostgreSQL Kubernetes operator，比多数人相信 Kubernetes 能跑生产数据库还早。作者承认 PGO 的开创性价值：很多团队确实基于它跑了生产 PostgreSQL。
+
+CloudNativePG 起步更晚，源于 2ndQuadrant/EDB 对 Kubernetes 存储成熟度的观察，第一批相关工作在 2019 年 Kubernetes local persistent volume 稳定后开始，CloudNativePG 的首次提交在 2020 年。
+
+### 2. 最大分歧：HA 智能放在哪里
+
+Crunchy PGO 把高可用交给 Patroni。Patroni 是传统 Linux 环境下非常成熟的 PostgreSQL HA 管理器，但在 Kubernetes 中，这意味着同时运行两个复杂分布式系统：Kubernetes + Patroni。
+
+CloudNativePG 的设计哲学是：Kubernetes API server 就是控制平面和 single source of truth，高可用逻辑应该原生写在 operator 里，而不是再引入 Patroni/etcd 这类额外协调层。
+
+作者认为这能减少运维面：少一个需要监控、调试、升级的分布式系统。
+
+### 3. Pod 管理方式
+
+CloudNativePG 不使用 StatefulSet，而是直接管理 Pod 和 PVC。
+
+好处：failover 时可以选择 LSN 最高的副本晋升为 primary，而不是受 StatefulSet ordinal 绑定。它也能更精细地控制配置变更顺序，例如某些参数必须先在 standby 上调高，再应用到 primary。
+
+PGO 由于依赖 StatefulSet/Patroni，需要额外协调层处理这些问题。
+
+### 4. Instance Manager
+
+CloudNativePG 没有 HA sidecar，而是在 PostgreSQL 容器内以 Go 编写的 Instance Manager 作为 PID 1，负责 Postgres 生命周期、自愈、健康上报、复制 lag/position 上报。
+
+它的健康探针是 database-aware 的：
+
+- startup probe：避免初始化/恢复时被误重启
+- readiness probe：判断是否可服务，也可检查 replica lag
+- liveness probe：当 primary 同时失去 API server 和 peer 连接时主动失败，让 Kubelet 重启 pod，从而降低 split-brain 风险
+
+作者认为这是“用 Kubernetes 原语解决 Kubernetes 环境里的问题”。
+
+### 5. Kubernetes API server 故障怎么办
+
+CloudNativePG 在 API server 不可用时会暂停 failover，优先保护数据。
+
+作者认为这是诚实的设计取舍：没有 API server，operator 无法获得全局一致视图，贸然 failover 风险更大。已有 pod 仍由本地 Kubelet 继续运行，但调度、reconciliation 和全局决策会暂停。
+
+### 6. 镜像、安全和体积
+
+Crunchy 的 operand image 打包了 Patroni、Python runtime、pgBackRest、pgAudit、pgvector、TimescaleDB、pg_cron、pg_partman 等，基于 UBI9。
+
+CloudNativePG minimal image 只包含 PostgreSQL，扩展通过 PostgreSQL 18 + Kubernetes ImageVolume 以 OCI image volume 运行时挂载。
+
+作者给出的 docker scout 数据：
+
+- Crunchy image：625 packages，2 critical，156 high
+- CNPG minimal-trixie：140 packages，0 critical，4 high
+
+作者认为更小镜像意味着更小攻击面、更少审计负担。CNPG 镜像还提供 SBOM/provenance attestation。
+
+许可方面，作者提醒 Crunchy 镜像过去受 Crunchy Data Developer Program 限制，超过 50 人组织生产使用可能受限；CloudNativePG 生态镜像则是 Apache 2.0 开源。
+
+### 7. 大版本升级
+
+PGO v6 使用 PGUpgrade CRD。升级前必须关闭整个集群，pg_upgrade 完成后再启动。停机窗口主要来自 shutdown/restart，不是数据量。问题是：没有声明式 rollback，standby cluster 不支持升级，必须删除重建；ANALYZE、扩展升级、旧目录清理等也需手工处理。
+
+CloudNativePG 提供三条路径：
+
+- offline：pg_dump/pg_restore，通过 bootstrap.initdb.import 声明式执行
+- online：PostgreSQL logical replication + Publication/Subscription，cutover 可缩短到秒级
+- in-place：pg_upgrade，存在 replica 时支持自动 rollback
+
+作者认为这是 CNPG 投入很深、差异很具体的一块。
+
+### 8. 备份与恢复
+
+PGO 把 pgBackRest 嵌入 operand image。pgBackRest 本身很好，但缺点是备份工具和数据库镜像耦合，更新 pgBackRest 需要新 operand image。
+
+CloudNativePG 有两种方式：
+
+- Kubernetes-native volume snapshots：operator 直接支持，支持 cold/hot backup；hot backup 需要 WAL archive
+- CNPG-I plugin interface：把备份工具和 operator 解耦；Barman Cloud Plugin 是参考实现，理论上也可接 pgBackRest/WAL-G
+
+作者强调 Barman 源于 2ndQuadrant 团队，这影响了 CNPG 的备份设计。
+
+### 9. 可观测性
+
+两者都支持 Prometheus metrics。
+
+CloudNativePG 额外支持通过 ConfigMap/Secret 声明自定义 metrics query，并由 Cluster 资源引用。日志方面，CNPG 容器全部输出 JSON structured logs 到 stdout，适配 Kubernetes 日志聚合体系，不在 pod 内管理日志文件。
+
+### 10. 社区与治理
+
+作者用数据强调 CNPG 的社区势头：
+
+- PGO GitHub stars：约 4.4k
+- CNPG：主 repo 约 8.6k，org 总计近 10k
+- 最近三年 commit rate：PGO 约 235/year；CNPG 约 894/year
+- 最近 18 个月 GA release：PGO 约 4 次；CNPG 约 18 次
+- PGO 2025 年有 8 个月 release gap
+- CNPG 有 CNCF Sandbox、公开 governance、roadmap、OpenSSF Baseline、SECURITY-INSIGHTS、threat assessment、ADOPTERS.md
+
+作者也承认 CNPG 有 174 个 open PR，是维护压力和 AI-generated contribution 增多的真实问题。项目正在处理 extension image support、Barman Cloud 插件迁移、E2E test refactor 等技术债。
+
+## 作者结论
+
+Crunchy Data 是先行者，PGO 有真实生产历史。但 2026 年的环境已经不同：Kubernetes 更成熟，operator pattern 更稳定。在作者看来，继续在数据库 pod 里运行一个平行的分布式 HA 系统，成本越来越不划算。
+
+如果团队重视长期架构、开放治理、安全透明度和社区动能，作者认为 CloudNativePG 更值得认真考虑。但他也建议：承认偏见，两个都试，根据团队、工作负载和组织约束做决定。
+
+## 我的判断
+
+这篇文章的关键信息不在“CNPG 功能更多”，而在架构哲学：
+
+- PGO：Postgres HA 主要交给 Patroni，Kubernetes 负责承载
+- CNPG：Kubernetes 本身就是 HA/控制平面，operator 原生管理 Postgres
+
+如果团队已经深度使用 Patroni，有成熟的 Patroni 运维经验，PGO 的心智模型可能更自然。
+
+如果团队想要 Kubernetes-native、较小镜像、更开放治理、声明式升级/备份/观测，以及更少外部协调组件，CloudNativePG 的路线更现代。
+
+一句话：PGO 是“把成熟的 PostgreSQL HA 栈搬进 Kubernetes”；CloudNativePG 是“按 Kubernetes 的方式重新设计 PostgreSQL operator”。

@@ -1,0 +1,237 @@
+---
+title: 我所知道的所有 Claude Code 技巧（2026 年 3 月）
+author: Matt Van Horn (@mvanhorn)
+source: https://x.com/mvanhorn/status/2035857346602340637?s=20
+saved: 2026-06-08 12:53:48
+type: x-post
+language: zh
+tags: [ai-coding, claude-code, agentic-engineering, workflows]
+extraction: browser-twitterArticleReadView
+---
+
+# 我所知道的所有 Claude Code 技巧（2026 年 3 月）
+
+![Image](../../assets/mvanhorn-every-claude-code-hack-march-2026/image-1.jpg)
+
+[@kevinrose](https://x.com/@kevinrose) 问该用什么 IDE。我的回复在 128 个回答中获得了最多互动："不用 IDE。只用 plan.md 文件和语音。"下面就是我这句话的全部含义。
+
+## 1. 一想到点子，立刻 /ce:plan 或 /ce:brainstorm
+
+我学到的最重要的一件事：一想到点子，立刻 /ce:plan。
+
+不是"让我想想这个"。不是"让我开始写代码"。而是 /ce:plan。每一次。一个疯狂的产品想法？/ce:plan。有人在 GitHub 上发了一个 bug？复制 issue URL，粘贴进来，/ce:plan。终端报错？用 Cmd+Shift+4 截图，直接 Ctrl+V 粘贴到 Claude Code 里，/ce:plan fix this。Claude Code 接受图片——bug 截图、错误信息、设计 mockup、Slack 对话——并能根据它们写出计划。
+
+当你运行它时，底层是这样运作的。/ce:plan 会并行启动多个研究 agent。一个分析你的代码库——读取文件、寻找模式、检查你的编码约定。另一个搜索你的 docs/solutions/，寻找过往 bug 的经验教训。如果主题需要，更多 agent 会同时研究外部最佳实践和框架文档。
+
+然后它整合并写出一份结构化的 plan.md：哪里出了问题、采用什么方法、需要修改哪些文件、带复选框的验收标准、应从你自己代码中遵循的模式。不是泛泛的建议。它是扎根于你的代码库、你的约定、你的历史的。
+
+/ce:work 拿着这份计划并把它构建出来。拆分成任务，逐一实现，运行测试，勾选标准。上下文丢了？开一个新 session，指向那份计划，从断点继续。计划是能穿透一切的检查点。
+
+传统开发是 80% 编码、20% 规划。这里把它颠倒过来了。正如 [@jarodtaylor](https://x.com/@jarodtaylor) 所说："如果你花 80% 的时间用 Opus 规划它，然后让 subagents 蜂拥而上……"思考发生在计划里。执行是机械的。
+
+Compound Engineering 是让这一切成为现实的插件。来自 [@EveryInc](https://x.com/@EveryInc)：
+
+/plugin marketplace add EveryInc/compound-engineering-plugin
+
+我成了超级粉丝。然后我成了贡献者，GitHub 上第 #3 贡献者，21 次提交，仅次于核心团队。@kevinrose 几周前把它介绍给了我。
+
+我在 /last30days 上有 70 个计划文件和 263 次提交。差距来自我养成这个纪律之前的早期提交。现在我的规则是：除非真的只改一行，否则总是先有一份 plan.md。
+
+## 2. 进入语音模式
+
+在 LLM 出现之前，我受不了语音笔记。Apple 内置听写让我想把手机扔出去。但语音到 LLM 完全不一样。转录不必完美，因为 Claude Code 理解上下文。它会猜测麦克风听错了什么。你可以含糊不清、话说一半停住、重新开始一句话。语音终于能用了，因为听话者足够聪明，能填补空白。
+
+Monologue（[@usemonologue](https://x.com/@usemonologue)，来自 Every——也就是制作 Compound Engineering 的同一家公司）把语音输入到当前聚焦的任何 app 中。你说话，它输入到 Claude Code。WhisperFlow 也很棒。任选一个。我给办公室买了一个鹅颈麦克风。
+
+我现在就是在特斯拉 Full Self-Driving 模式下口述这一段，一边送孩子。这段是说出来的，不是打出来的。
+
+## 3. 同时运行四到六个 Session
+
+这就是我实际度过一天的方式。四到六个 Ghostty 窗口，每个运行一个单独的 Claude Code session。一个在写计划。一个在根据另一份计划构建。一个在跑 /last30days 研究。一个在修复我测试上一件东西时发现的 bug。
+
+当 /ce:plan 在一个窗口里启动研究 agent 时，我切到另一个窗口，对已经写好的计划执行 /ce:work。当那个在构建时，第三个窗口会粘贴进一个新的 bug。等我循环回第一个窗口时，计划已经完成并在 Zed 里等着了。
+
+这就是为什么绕过权限（下一节）是不可妥协的。如果每个 session 每个动作都问"Allow?"，你就没法切换上下文。它们都需要自主运行。查看一下、做出反应、继续。如果你搞坏或毁掉了一切，还有 GitHub 在那里。
+
+这也是为什么我的 MacBook 大约一个小时就没电。六个 Claude session 并行。刚刚订了新的 MacBook Pro。
+
+## 4. 三个改变一切的设置
+
+Claude Code 的默认模式会对每次编辑、每个命令都请求许可。你需要三处配置修改。
+
+"Dangerously skip permissions"（是的，它真的就叫这个）。~/.claude/settings.json：
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "WebSearch", "WebFetch", "Bash", "Read", "Write",
+      "Edit", "Glob", "Grep", "Task", "TodoWrite"
+    ],
+    "deny": [],
+    "defaultMode": "bypassPermissions"
+  },
+  "skipDangerousModePermissionPrompt": true
+}
+```
+
+skipDangerousModePermissionPrompt: true 是关键。没有它，Claude 会要求你确认每个 session。你也可以 Shift+Tab 来切换它。致谢：[@danshapiro](https://x.com/@danshapiro)（Glowforge 创始人，《Hot Seat》作者）。当我帮朋友设置 Claude Code 时，AI 主动试图阻止他启用这个。你必须直接一点。这是你的电脑。
+
+Claude 完成时播放声音。添加到同一个文件：
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay /System/Library/Sounds/Blow.aiff"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+走开。听到声音再回来。四到六个 session 同时运行时，你需要知道哪个刚刚完成。感谢 Myk Melez。
+
+Zed 自动保存。在 Zed 设置（Cmd+,）中：
+
+```json
+{
+  "autosave": {
+    "after_delay": {
+      "milliseconds": 500
+    }
+  }
+}
+```
+
+这是类似 Google Docs 的技巧。Zed 每 500 毫秒保存一次。Claude Code 监听文件系统。当 Claude 编辑文件时，改动立刻出现在 Zed 里。当你在 Zed 里输入时，Claude 会在一秒内看到。Ghostty 占一半，Zed 占另一半，两者看着同一个文件。感觉就像在 Google Doc 上协作，只不过其中一个协作者是 AI。
+
+## 5. 在规划之前先研究
+
+在我 /ce:plan 之前，我通常会先对它运行 /last30days。
+
+我曾在 Vercel 的 agent-browser 和 Playwright 之间做选择。我没有去读文档，而是运行了 /last30days Vercel agent browser vs Playwright。几分钟后：78 个 Reddit 讨论串、76 条 X 帖子、22 个 YouTube 视频、15 条 HN 文章。Agent-browser 使用的上下文 token 少 82-93%。Playwright 光是工具定义就倾倒出 13,700 个 token。[@rauchg](https://x.com/@rauchg) 的帖子获得了 964 个赞。
+
+把整个输出喂给 /ce:plan integrate agent-browser。计划产出时扎根于社区此刻真实知道的东西，而不是六个月前的训练数据。
+
+/last30days 是开源的（4.5K stars，[github.com/mvanhorn/last30days-skill](https://github.com/mvanhorn/last30days-skill)）。它并行搜索 Reddit、X、YouTube、TikTok、Instagram、HN、Polymarket 和网页。我什么都用它。选库之前、做功能之前、写这篇文章之前。我运行了 /last30days Compound Engineering，为第 1 节获取新鲜的社区引用。研究、计划、构建。这才是真正的循环。
+
+## 6. 把任何会议变成 plan.md
+
+我和一位潜在候选人一起吃午饭。我们讨论了一个公司还没有在做的新产品想法。我们也聊了食物、餐厅、孩子。一个半小时的正常对话，产品头脑风暴穿插其中。
+
+我当时开着 Granola。午饭后，我把完整转录稿——九十分钟夹杂着关于寿司的跑题——粘贴进 Claude Code：/ce:plan turn this into a product proposal。
+
+神奇之处在于：Claude Code 已经知道我们的产品代码在 GitHub 的哪里。它还可以访问我的公司战略文件夹——我以前写过的每一个 strategy plan.md。所以当它处理 Granola 转录稿时，它不只是在从午餐对话中提取想法。它是在与我们的真实代码库以及我们之前做过的每一个战略决策进行交叉参照。Granola 上下文 + 代码库 + 之前的战略计划 = 黄金。
+
+一次就写出了一份惊人的提案。目标、用户故事、技术方法、里程碑。忽略了关于餐厅的部分。当天晚上发给了那位候选人。
+
+他现在全职和我们一起做那个产品。
+
+Granola 现在有 MCP 支持，所以我直接在 Claude Code 里面使用它。不再需要复制粘贴。每次会议的上下文都直接流入计划。
+
+## 7. 把计划文件用于一切，不只是代码
+
+我当时在为我的公司写一份战略文档。Claude Code 和 markdown 文件并排打开。对着 Monologue 说："Give me three approaches for the go-to-market. Outline the pros and cons of each."
+
+三个选项出现在 Zed 里。"Option two is closest but the language in option one is better. Combine them."立刻更新。"Now address the biggest risk."添加了。"Second paragraph is too long."缩短了。
+
+Claude Code 拉取我们的 GitHub，所以它理解当前产品。它还可以访问我所有之前的 strategy plan.md 文件。当我写新的定位时，它拥有我之前做过的每一个战略决策的完整上下文。这种复利上下文让每一个计划都比上一个更好。
+
+战略文档、产品规格、竞争分析、这篇文章。相同的工作流。说话、计划、迭代。
+
+## 8. 用一台 Mac Mini 做远程 Claude Code
+
+我有一台为 OpenClaw 设置好的 Mac Mini，但我还用它做了另外两件事：
+
+从手机用 Telegram。Claude Code 有一个 Telegram 集成。我通过 Telegram 从手机给我的 Mac Mini 发消息。晚饭时想到一个 bug，就在 Telegram 里输入 /ce:plan fix the timeout issue。等我回到屏幕前时，计划已经在 Zed 里等着了。Claude Code 甚至会用我的 OpenClaw AgentMail，在我离开时把计划文件通过邮件发给我。
+
+tmux 用在飞机航班上。致谢：Nathan Smith。Claude Code 处理不好飞机 WiFi。连接掉线，session 死掉，而且它甚至不会告诉你。但如果先 tmux 到你的 Mac Mini，session 就在那台机器上运行。你的笔记本只是一个窗口。飞越大西洋时 WiFi 掉线 20 分钟？重新连接。session 精确停在你离开的地方，而且它已经做了工作。
+
+从欧洲回来的整个航班上都在交付功能。
+
+## 我也把这个工作流用于开源
+
+如果你看我的 GitHub 个人资料（github.com/mvanhorn），这里是我最近合并进去的一些项目，全部都在写任何一行代码之前先有 plan.md 文件：
+
+*   Python — defaultdict repr 无限递归、man page 文本换行
+*   OpenCV — HoughCircles 返回类型、YAML 解析器 heap-overflow
+*   Vercel Agent Browser — Appium v3 vendor prefix、WebSocket fallback、batch command workflows（#5 contributor）
+*   OpenClaw — browser relay、rate limit UX、iMessage delivery、Codex sandbox detection、voice calls
+*   Zed — [$ZED_LANGUAGE](https://x.com/search?q=%24ZED_LANGUAGE&src=cashtag_click) task variable、Reveal in Finder tab context menu、git panel starts_open setting
+*   Paperclip — SPA routing、plugin domain events、promptfoo eval framework（#3 contributor）
+*   Compound Engineering — plan gating、serial review mode、skills migration、NTFS colon handling（#3 contributor）
+
+## 我老婆对我很不满
+
+我随身带着笔记本电脑。四到六个 Ghostty 标签页加 Zed。她对此不太高兴。Mac Mini + Telegram 有帮助。但当我想让多个计划并行实时演进时，我需要笔记本。她真的很想让我别再把它带去学校 drop off。
+
+抱歉，亲爱的。
+
+## 这篇文章就是用这个工作流写的
+
+这是 Zed 里的一个 markdown 文件。Claude Code 正在 Ghostty 中运行。我对着 Monologue 说："the theme is wrong, rewrite the opening.""Add the Granola story.""Don't call Zed my IDE."Claude 重写。改动出现在 Zed 里。我做出反应。七次完整重写。
+
+这就是我知道的一切。一个语音 app、一个计划文件插件、三处配置修改、四到六个并行 session、一台 Mac Mini，以及会变成产品提案的会议。不用 IDE。不写代码。说话、计划、构建。从书桌前，从沙发上，从车里。
+
+## 彩蛋：当你的 Token 用完时
+
+这种效率会很快耗尽你的 $200/月 Claude Max plan。四到六个并行 Opus session 全天运行，费用会累积起来。
+
+答案是：再买 $200/月 Codex plan。安装 Codex CLI，然后 Compound Engineering 可以改用 Codex credits 来构建。我刚刚把 /ce:work --codex 发布到 Compound Engineering——今天已经合并——它会在 Claude credits 不足时把实现委托给 Codex。
+
+有些朋友用 Codex 来 review Claude Code 做的工作，反过来也一样。另一些人更喜欢 Codex 的代码输出，但从 Claude Code 调用它来做编排。这两个 plan 互为补充。Claude 用于规划，Codex 用于重型实现。
+
+我还有一个"night-night"模式，会在我睡觉时运行工作，但那要留到下次再解释。
+
+## 彩蛋 2：Disney World 全程实录
+
+为了从头到尾展示这个工作流处理非代码事务的样子，这里有一个今天的真实例子。我在足球场看孩子比赛。另一个家长和我在聊 Disney World 旅行。我拿出笔记本给她看。
+
+Step 1: /last30days Disney World。两分钟后，完整图景出来了。66 个 Reddit 讨论串（11,804 个 upvotes）、34 条 X 帖子、8 个 YouTube 视频。价格冲击是主导话题——r/DisneyPlanning 上一篇 $8,500 的旅行报告有 183 条评论。仅 3 月就有六个游乐设施关闭。Buzz Lightyear 将在 4 月 8 日带着新的 blasters 重新开放。Rock 'n' Roller Coaster 正在变成 Muppets ride。DinoLand 被拆除了。
+
+Step 2: "What will be open / not open in Pairl April 16th to be specific"（包括错别字——CC 不在乎）。Claude 检查了翻修日历，与 last30days 数据交叉参照，给了我完整的开放/关闭清单。
+
+Step 3: /ce:plan I'm going to be at Disney World for one day. I want to do at least three parks, maybe four, probably four, because I'm crazy. I want to do Guardians at Epcot, do a few rides at Hollywood Studios, do a few rides at World, do the Everest ride at Animal Kingdom, and at least one Avatar ride. Plus: "What is the strategy to get all the Genie Plus and the other things to make this work? Also, one week before, don't I have to look up something? What do I buy when? Help me set the reminders. I don't care about food. I do not have a hotel. happy to pay the $25 for one time pass"
+
+Claude 的研究 agent 启动了，和 last30days 数据交叉参照，并写出了一个结构化的 plan.md：游园顺序（AK -> HS -> Epcot -> MK）、精确的 Lightning Lane 预订策略、4 月 13/14/15 日早上 7:00 的三个闹钟提醒、哪些 ride 需要 Single Pass（$14-22 每个）而不是 Multi Pass、我孩子们的身高要求。
+
+Step 4: 在 Zed 中打开计划。审阅了它。为了让另一个家长制定她的计划，说："So I'm going on a trip to Disney World, and I'm doing three days in the parks. Tell me the most efficient routes, what passes to get, what extras to have... it's an eight and five-year-old."Claude 写了一个新的 305 行计划，包含 Rider Switch 流程、逐日行程，以及"本周穿鞋测量你的 5 岁孩子身高"的提醒。
+
+Step 5: "csn you pushCan you publish this last one on a Vercel site in light mode? That's easy to see."（更多错别字。仍然无所谓。）Claude 构建了一个干净的 HTML 页面并部署了它。
+
+Live at [disney-plan-ebon.vercel.app](https://disney-plan-ebon.vercel.app/)
+
+Step 6: 通过 Telegram 把 .md 文件丢进 OpenClaw。说："can you make a plan to add all these reminders to YOU with dobel safeties in case you mess up day before / calendar etc."OpenClaw 读取了计划，在我的工作日历上设置日历事件，并设置 cron job 备份，通过 Telegram ping 我。每个关键预订窗口都有双重覆盖。4 月 13 日 PT 凌晨 3:50："BUY Multi Pass NOW."4 月 16 日凌晨 3:50："BUY Single Passes NOW."两者都在 ET 早上 7 点窗口开启前 10 分钟。触发后自动删除。
+
+语音到研究，到计划，到网站，再到自动提醒。在一个足球场上。
+
+这就是工作流。它适用于代码、战略、开源、文章，显然也适用于 Disney World。
+
+/last30days 是开源的。4.5K stars。70 个计划文件，而且还在增加。
+
+[@slashlast30days - github.com/mvanhorn/last30days-skill](https://github.com/mvanhorn/last30days-skill)
+
+[Compound Engineering: @EveryInc](https://github.com/EveryInc/compound-engineering-plugin)
+
+Monologue: @usemonologue（来自 Every）
+
+Granola: [granola.ai](https://granola.ai/)（现在带 MCP）
+
+Ghostty: [ghostty.org](https://ghostty.org/)
+
+Zed: [zed.dev](https://zed.dev/)
+
+![Image](../../assets/mvanhorn-every-claude-code-hack-march-2026/image-2.jpg)
+
+![Image](../../assets/mvanhorn-every-claude-code-hack-march-2026/image-3.jpg)
+
+![Image](../../assets/mvanhorn-every-claude-code-hack-march-2026/image-4.jpg)
+
+![Image](../../assets/mvanhorn-every-claude-code-hack-march-2026/image-5.jpg)

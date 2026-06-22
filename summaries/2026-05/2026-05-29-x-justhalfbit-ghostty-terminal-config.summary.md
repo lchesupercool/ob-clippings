@@ -1,0 +1,60 @@
+---
+source: https://x.com/justhalfbit/status/2059988985255215288?s=52
+saved: 2026-06-02 12:36:32 +0800
+summary_of: LLM Wiki/raw/clippings/2026-05/2026-05-29-x-justhalfbit-ghostty-terminal-config.md
+title: 这可能是 macOS 最好看的终端｜Ghostty 配置分享 + 必备插件全推荐
+published: 2026-05-29
+---
+
+# 这可能是 macOS 最好看的终端｜Ghostty 配置分享 + 必备插件全推荐 — 摘要
+
+## 一句话结论
+
+作者用 Ghostty + Starship + 3 个 zsh 插件 + 5 个现代 CLI 工具，替换掉 iTerm2 + oh-my-zsh 的"臃肿框架式"终端栈，得到一个启动快、外观好看、配置文本化、即改即生效的 macOS 终端环境，并把整套开源、提供一行安装脚本。
+
+## 文章主旨
+
+文章把 macOS 终端拆成三层：终端模拟器（Ghostty）、提示符（Starship）、shell 增强（zsh + 3 插件 + 几个独立 CLI 工具），强调"用独立小工具组合代替大框架"。作者明确反对 oh-my-zsh 这种"自带 300 多插件、只用 5 个、每次启动都加载一堆东西"的方式，认为只需要 3 个 zsh 插件加几个替代品（fzf / zoxide / eza / bat / yazi）就能覆盖日常 90% 的命令行操作。所有配置开源，可一行 curl 脚本安装。
+
+## 关键脉络
+
+1. 作者把用了五年的 iTerm2 + oh-my-zsh 换成 Ghostty + Starship + 独立插件栈。
+2. 三层结构：Ghostty（终端模拟器）/ Starship（提示符）/ zsh + 插件（shell 增强），互不依赖。
+3. Ghostty 卖点：Zig 写、原生 macOS、GPU 渲染、配置纯文本、改完即时生效、冷启动 < 0.5 秒；功能上比 iTerm2 少（无 profile / 触发器 / tmux 集成），但更轻。
+4. Starship 是 Rust 写的跨平台提示符，用 catppuccin-powerline 预设；信息条独占一行、命令行第二行；实时显示 Git 状态。
+5. 必装 3 个 zsh 插件：zsh-autosuggestions（灰色补全历史命令）/ zsh-syntax-highlighting（绿红高亮）/ zsh-completions（git/docker/brew/kubectl 参数补全）。
+6. fzf 是"最值得装的一个"：Ctrl+R 模糊搜历史命令，Ctrl+T 模糊搜当前目录文件，`cmd **<Tab>` 触发 fzf 补全（`cd **`、`kill **` 等）。
+7. zoxide 用 `z <关键字>` 替代 `cd`，按访问频率 + 时间排序；重名用 `zi` 进交互模式 + fzf；注意不要 `alias cd="z"`。
+8. eza 替代 ls（图标 + 颜色 + 目录优先）、bat 替代 cat（语法高亮）；用 alias 直接覆盖系统命令。
+9. yazi 是三栏键盘式终端文件管理器，`q` 退出后终端 cwd 自动跟到 yazi 当前目录。
+10. 提供一行 `bash <(curl -fsSL .../install.sh)` 安装脚本，仓库 README 有手动步骤；配合 Alfred ⌘+Space → cc 直接打开 Ghostty 进入 Claude Code。
+
+## 值得注意的细节
+
+- 作者明确说"功能上 iTerm2 更全"——不是无脑黑 iTerm2，而是承认在不需要 profile / 触发器 / tmux 集成的前提下，Ghostty 的体验更好。
+- Ghostty 保存配置文件的瞬间终端就变了，不用重启进程；`⌘+,` 打开配置、`⌘+Shift+,` reload。
+- `ghostty +list-themes` 内置 300+ 主题可直接预览切换。
+- zoxide 的频率数据会自动衰减，长时间没访问的目录权重慢慢降低，免维护。
+- 一个反直觉建议：**不要** `alias cd="z"`，会出问题——保持 `z` 单独使用是作者验证过的反面经验。
+- 整套方案的核心理念是"用独立的小工具组合代替带主题的大框架"——和 oh-my-zsh / powerlevel10k 的设计哲学是相反的。
+- 文章只覆盖 zsh，对 fish 用户没有直接说明（fish 也支持 fzf / zoxide / eza / bat / yazi，但 zsh-autosuggestions / syntax-highlighting / completions 这三件在 fish 里是**内建**的，不需要单独装）。
+
+## 我的理解
+
+这是一篇典型的 macOS 极客"我的终端工作流分享"，价值密度其实不在 Ghostty 本身（Ghostty 官网+ README 就够了），而在于作者给出的**取舍清单**：哪些东西可以扔（oh-my-zsh 框架），哪些是"用了回不去"（fzf Ctrl+R、zoxide z 跳转、bat 语法高亮），以及背后的一套"组合小工具、不要大框架"的方法论。这个方法论比工具列表本身更有迁移价值。
+
+文章的弱点是默认目标用户是 zsh。Ghostty / Starship / fzf / zoxide / eza / bat / yazi 这一层完全跨 shell，但 zsh-autosuggestions 那三件在 fish 里其实不需要——fish 内建。如果直接照搬安装脚本，fish 用户会装一堆用不上的 zsh 配置。
+
+另外作者强调的"启动快"在现代机器上其实是 marginal 收益（半秒 vs 一秒），真正改变体验的是 fzf + zoxide 这两个"操作模式变化"——从"按 ↑ 翻 / 手打路径"变成"模糊搜索 / 关键字跳转"，这是日常使用频次最高的两个操作。
+
+## 对我的参考价值
+
+- **fzf + zoxide 立即可装**——你当前 shell 是 fish（见环境信息），这两个在 fish 下都有官方支持（`fzf_key_bindings`、`zoxide init fish`），且操作模式改变收益最大。建议先装这两个，再决定是否换 Ghostty。
+- **Ghostty 值得评估替换 iTerm2 / Warp**——你做远程开发 + SSH 隧道（见 ssh-diagnose skill），原生 GPU 渲染 + 低内存的终端在多窗口/长 session 场景下确实更舒服；但 tmux 集成缺失对远端开发会有影响，需要先确认是否依赖 iTerm2 的 tmux integration。
+- **反面教材：不要照搬 oh-my-zsh 思维到 fish**——fish 用户经常会装 oh-my-fish / fisher + 一大堆插件，作者这套"小工具组合"哲学迁移到 fish 就是只用 fisher 装 fzf.fish / z.fish 两个，其它别动。
+- **可立刻动手的小实验**（接下来可以让我跑）：
+  1. 检查当前 fish 是否已装 fzf / zoxide / eza / bat，列出缺什么
+  2. 在不动现有 fish config 的前提下，临时启动一个 Ghostty 评估渲染和启动速度
+  3. 把作者仓库的 `install.sh` 抓下来逐行审查，挑出与 shell 无关的工具单独装（避开 zsh 那几个）
+- **与 LLM Wiki 的连接点**——这篇可以和 [Alfred 配置那篇 / Claude Code workflow] 一起进 outputs/，做一篇"macOS + 终端 + Claude Code 工作流"的回填文档；和 `2026-05-29-x-justhalfbit-ghostty-terminal-config` 同作者的 Alfred 文是同一套生产力链路。
+- **Career 项目无直接关联**——这篇不是数据库内容，参考价值集中在日常工作流改造，不影响面试准备进度。

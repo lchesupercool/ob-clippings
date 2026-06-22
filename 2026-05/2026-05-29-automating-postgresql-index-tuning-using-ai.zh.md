@@ -1,0 +1,204 @@
+---
+title: 使用 AI 自动化 PostgreSQL 索引调优
+source: https://stormatics.tech/blogs/automating-postgresql-index-tuning-using-ai
+saved: 2026-05-29 16:35:00 +0800
+author: Warda Bibi
+published: 2026-05-28
+images: 0
+---
+
+## [使用 AI 自动化 PostgreSQL 索引调优](https://stormatics.tech/blogs/automating-postgresql-index-tuning-using-ai "Automating PostgreSQL Index Tuning Using AI")
+
+如果你有一个慢查询，一个显而易见的做法就是加索引。于是你查看 WHERE 子句，选一个列，运行 CREATE INDEX，然后再测试。有时候它会有帮助，但很多时候并不会。现在你就多了一个索引：它没有帮到读查询，却会拖慢每一次写入，因为 INSERT、UPDATE 和 DELETE 都必须维护它。而且随着系统增长，问题会变得更糟。
+
+五个查询还算可控。你可以推理列的选择，测试不同组合，并检查 EXPLAIN 输出。==当你面对的是十几张表上的五十个查询时，你实际上是在手工评估数百种可能的列组合==；如果锁处理不当，每一种都有可能在生产环境里造成问题。
+
+## 为什么索引调优比看起来更难
+
+大多数人都知道索引能加速读取。较少有人仔细思考：==当他们添加一个索引时，实际会发生什么。==[^1]
+
+第一，PostgreSQL 可能根本不会使用它。planner 会比较不同策略，并选择成本最低的那个。如果你的查询会访问表中很大一部分数据，那么顺序扫描实际上可能比索引扫描更便宜。创建索引不会改变这个计算过程，它只是增加了开销。
+
+第二，即使用 ==CONCURRENTLY==[^2]，在繁忙表上创建索引也不是免费的。它会和你的工作负载竞争资源，可能导致复制延迟，有时还会超时。人们通常要等到凌晨 2 点真的发生事故时，才会开始考虑这些问题。
+
+第三，这一点比较微妙：添加错误的索引有时比什么都不加更糟。你付出了写入开销，却没有得到任何读取收益。
+
+更难的是列顺序。`(status, customer_id)` 上的复合索引和 `(customer_id, status)` 上的复合索引是完全不同的东西。planner 会决定使用哪一个，而这个决定取决于你的数据分布、WHERE 子句中出现了哪些条件，以及每个列的选择性。手工做这件事很容易出错。真正的挑战是：如何在不触碰生产环境的情况下验证它。
+
+## 自动化背后的思路
+
+当一个问题重复、耗时，而且大部分是机械性的，你就应该自动化它。==这正是 `pg_index_search` 做的事情==。它把索引调优里的试错部分变成了一条结构化流水线。
+
+这个工具会从 `pg_stat_statements` 读取你的真实查询工作负载，判断哪些列值得建立索引，生成候选索引，然后最关键的是：在不向磁盘写入任何东西的情况下测试它们。你会得到带有实测成本改进的 CREATE INDEX 语句。至于要不要应用、何时应用，由你决定。
+
+下面是每个部分的工作方式。
+
+### 第 1 步：从真正慢的地方开始
+
+这个工具会从 `pg_stat_statements` 拉取查询，并使用几个过滤条件。
+
+1. 它会忽略一次性查询（调用次数少于 50 次，数据量不足以说明问题）。
+2. 它会跳过已经在 5ms 以内完成的查询（索引不会在那里产生明显效果）。
+3. 它按 `total_exec_time` 排序，而不是按平均延迟排序。
+
+最后一点比听起来更重要。一个平均 50ms、每天运行 10,000 次的查询，远比一个运行 2 秒但只执行一次的查询更值得优化。按总影响而不是单次查询速度优化，才是真正改善关键指标的方式。
+
+每个查询都会获得一个权重，基于调用次数乘以平均执行时间。这个权重会贯穿流水线的后续步骤，因此算法会始终聚焦于降低数据库总体负载。
+
+### 第 2 步：解析查询以找出可索引列
+
+`pg_stat_statements` 会用 `$1`、`$2` 这样的占位符存储查询。planner 需要真实值来估计选择性，所以工具会用从 `pg_stats` 里提取的代表性值替换这些占位符（优先使用最常见值，直方图数据作为 fallback）。
+
+然后它会使用 pglast 将每个查询解析成 AST；pglast 底层使用的是 PostgreSQL 自己的 parser。接下来，它会从 WHERE 子句、JOIN、ORDER BY 和 HAVING 中提取列。只出现在 SELECT 列表中的列会被忽略，因为它们对索引选择没有帮助。
+
+对于这样的查询：
+
+```
+SELECT user_id, event_type, created_at  
+FROM events  
+WHERE tenant_id = $1  
+  AND event_type = 'feature_use'  
+  AND created_at > now() - interval '30 days'  
+ORDER BY created_at;
+```
+
+输出是：`events: [tenant_id, event_type, created_at]`。这就是下一步的输入。
+
+### 第 3 步：生成候选索引
+
+在识别出每张表的相关列之后，工具会生成所有单列索引、所有两列组合，以及所有三列组合。已有索引会被过滤掉。非常宽的列（`avg_width` 超过 40 字节）也会被排除，因为通常不适合为它们建立索引。
+
+对于上面的 events 示例，你会得到这样的候选项：
+
+```
+(tenant_id), (event_type),(created_at)  
+(tenant_id, event_type), (tenant_id, created_at), (event_type, created_at)
+```
+
+以及三列复合索引。这里有一个诚实的限制：每个组合内部的列顺序是固定的。工具会生成 `(tenant_id, event_type)`，但不会生成 `(event_type, tenant_id)`。在很多情况下这无关紧要。但在一些情况下，尤其是混合了等值条件和范围条件的查询，列顺序确实会影响结果。这正是 LLM 优化器要补上的缺口，后面会讲到。
+
+### 第 4 步：用 HypoPG 安全地测试一切
+
+这是让整个方法对生产环境安全的关键部分。
+
+工具不是创建真实索引来测试它们，而是使用 HypoPG。HypoPG 是一个 PostgreSQL 扩展，可以在内存中创建假想索引。这些假索引会直接接入 planner，因此当你运行 EXPLAIN 时，planner 会把它们当作真实存在的索引，并使用真实表统计信息来估算成本。
+
+循环过程是这样的：创建一个假想索引，运行 EXPLAIN，记录成本，然后清除该索引。对每个候选项都这样做。结果会被缓存，因此同一个组合不会被重复评估。
+
+这里没有磁盘写入，没有表锁，也绝对不会影响线上流量。你可以在生产数据库上、在工作时间测试任意表上的任意列组合，除了在一次 EXPLAIN 调用期间改变 planner 的内部状态之外，什么都不会改变。加权成本公式是：
+
+**Σ (cost × calls × avg_time)**
+
+它会跨所有查询计算。因此，那些能改善高频、高延迟查询的索引，会比只略微帮助少量查询的索引得分更高。
+
+### 第 5 步：用贪心搜索找到最佳组合
+
+单独测试索引很直接，但找到最佳组合才是困难部分。
+
+如果你有 50 个候选索引，就有 `2^50` 种可能的子集需要评估。这大约是一千万亿种组合，实际上不可行。
+
+因此，工具使用贪心方法。第一轮，它单独尝试每个候选索引，并选择目标分数最好的那个。第二轮，它尝试在赢家基础上添加每一个剩余候选项。这个过程会持续进行，直到没有候选项能让成本至少改善 10%，或者达到时间或存储预算。目标函数是：
+
+**log(query_cost) + 2 × log(total_space).**
+
+使用对数很重要，因为它能防止算法追逐巨大的绝对数值。从 1,000,000 降到 500,000，和从 100 降到 50，是相同的相对改进，`log()` 会以这种方式对待它们。存储项上的 2× 乘数意味着：大型索引必须用足够有意义的查询改进来证明自己值得被保留。
+
+在实践中，在一个 1800 万行、SaaS 风格的数据库上，这让整体成本从 36 亿降到 3.04 亿，大约是 12 倍改进，总索引大小约为 55 KB。索引大小这么小，是因为索引只存储被索引的列，而不是完整行。一个 874 MB 的 events 表，有一个 55 KB 的索引，却能让查询成本改变一个数量级。
+
+### 输出
+
+输出是可以直接运行的 SQL。不会自动应用任何东西。
+
+```
+SUMMARY  
+  Recommendations: 2  
+  Base cost:       4175.8  
+  New cost:        33.2  
+  Improvement:     125.7x  
+  Total index size: 1.3 MB
+```
+
+RECOMMENDED INDEXES
+
+[1] CREATE INDEX ON orders  
+    USING btree (customer_id)  
+    Size: 457 kB  
+    Standalone: 99.6x (4175 → 41)  
+    Stacked:    99.6x (4175 → 41)
+
+[2] CREATE INDEX ON orders  
+    USING btree (status, customer_id)  
+    Size: 800 kB  
+    Standalone: 1.5x (4175 → 2727)  
+    Stacked:    1.3x (41 → 33)
+
+每个索引的两个数字告诉你的正是你真正需要知道的信息。Standalone improvement 表示该索引单独使用时的效果。Stacked improvement 表示在前面的索引已经存在后，它额外带来的收益。索引 2 单独看起来很弱，只有 1.5 倍；但在索引 1 之上，它仍然贡献了 1.3 倍改进。至于这是否值得 800 KB 存储空间，由你决定。
+
+这里的 improvement 是一个倍率（`base_cost ÷ new_cost`），不是百分比。125x 改进意味着 planner 估计的总工作量少了 125 倍，而不是少了 125%。
+
+还值得注意的是：输出中有些查询显示 1.0x 改进。工具没有为它们推荐索引，这是有意为之。过度索引有真实成本，而评分函数就是为了避免这种情况。
+
+### 贪心算法的不足，以及 LLM 如何接手
+
+贪心式 DTA 方法快速、可预测，并且能很好地处理大多数情况。但它有结构性盲点。
+
+* 列顺序就是其中之一。算法生成组合时，如果组合生成器先产生了 `(customer_id, status)`，那么 `(status, customer_id)` 可能永远不会被尝试。对于混合了等值条件和范围条件的查询，顺序会显著影响索引先排除哪些行。
+* 部分索引是另一个盲点。工具不会生成：
+
+```
+CREATE INDEX ON orders (customer_id) WHERE status = 'pending'
+```
+
+这样的部分索引对于总是过滤该 status 值的查询来说会更小、更快，但它不在组合生成器能产生的范围内。
+
+* 表达式索引也落在同一个缺口里。像 `lower(email)` 这样的索引表达式，不是算法会考虑的东西。
+
+LLM 优化器负责处理这些情况。它会拿到查询及其 EXPLAIN 计划，连同之前尝试的历史一起发送给 Claude 或 GPT，然后获得超出列组合范围的结构化索引建议。每条建议都会通过同样的方式验证：HypoPG 和 EXPLAIN。因此，在没有测量之前，不会信任任何东西。
+
+这个迭代循环会跟踪最好的 5 次尝试，并在连续 5 轮没有改进后停止。在 3 次失败尝试之后，prompt 会明确要求给出不那么显而易见的建议，并把 temperature 提高到 1.2，以获得更多样化的输出。
+
+实际工作流是：先在整个工作负载上运行 DTA。然后，对于 DTA 结果不理想的查询，或者你怀疑列顺序很重要的查询，再对该特定查询运行 LLM 模式。请注意，在这个过程中，LLM 是补充，而不是替代品。
+
+### 如何运行它：
+
+```
+git clone https://github.com/WardaBibi/pg_index_search  
+cd pg_index_search  
+uv pip install -e .  
+On your database:
+```
+
+CREATE EXTENSION hypopg;  
+CREATE EXTENSION pg_stat_statements;  
+ANALYZE;
+
+然后把它指向你的数据库：
+
+```
+# Automatic workload mode  
+uv run python main.py "postgresql://user@host/mydb"
+```
+
+# Specific query  
+uv run python main.py “postgresql:***@host/mydb” \  
+  –queries “SELECT \* FROM orders WHERE customer_id = 5”
+
+# LLM mode  
+export ANTHROPIC_API_KEY=”sk-ant-…”  
+uv run python main.py “postgresql://user@host/mydb” \  
+  –method llm \  
+  –queries “SELECT \* FROM orders WHERE customer_id = 5 AND status = ‘pending'”
+
+在使用工具前先运行 ANALYZE，这样 planner 才有最新统计信息。应用任何推荐索引之后，运行 EXPLAIN ANALYZE 来确认实际执行时会发生什么。planner 估算很好用，但并不等同于运行时行为，尤其是在你的数据分布发生变化时。
+
+### 真正值得内化的东西
+
+手工索引调优有一个很硬的上限。当你只有少量查询，并且有时间逐个推理时，它能工作。当你有 50 多个查询、跨多张表，工作负载每周都在变化，而且还需要在不冒生产事故风险的情况下验证变更时，它就会失效。
+
+HypoPG 模拟和基于工作负载权重的评分结合起来，改变了约束条件。你不再是“让我猜一下再检查”，而是变成“这是 planner 在你的真实工作负载下实际更偏好的选择”。最终决定应用什么、何时应用的仍然是你。工具只是替代了猜测。
+
+代码仓库在 [github.com/WardaBibi/pg_index_search](http://github.com/WardaBibi/pg_index_search)。
+
+[^1]: 列举 PostgreSQL 增加一个索引引入的代价
+
+[^2]: 扩展 PostgreSQL concurrently 创建索引的知识卡片

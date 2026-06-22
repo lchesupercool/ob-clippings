@@ -1,0 +1,63 @@
+---
+source: https://mp.weixin.qq.com/s/bZgSVSbKuL2y1EBnkCluPg
+saved: 2026-06-06 14:59 +0800
+summary_of: https://mp.weixin.qq.com/s/bZgSVSbKuL2y1EBnkCluPg
+title: Snowflake Summit 26 见闻实感：Goodbye Data, Hello AI
+author: 郭炜
+publisher: InfoQ
+published: 2026年6月6日 13:30
+---
+
+# Snowflake Summit 26 见闻实感：Goodbye Data, Hello AI — 总结
+
+## 一句话结论
+
+作者认为 Snowflake 正在从“云数据仓库 / Data Cloud”激进转向“企业 AI + Data 平台”，目标不是在数据仓库上加 AI 功能，而是成为 Agentic Enterprise 的底座，直接进入 OpenAI、Anthropic 所竞争的企业 AI 入口战场。
+
+## 文章主旨
+
+Snowflake Summit 26 传递的核心变化是：数据平台的价值表达正在从“存、算、治、共享数据”转为“让 AI 和 Agent 在企业数据、权限、语义、治理边界内理解问题并执行任务”。作者用 “Goodbye Data, Hello AI” 概括这种变化，但强调不是数据不重要，而是数据变成了 AI 的上下文、燃料和执行基础。
+
+Snowflake 的战略关键词从 Data Warehouse 变成了 unified architecture for AI and data。它不希望企业在数据平台之外另建一个孤立 AI 平台，因为那会重新制造 AI 孤岛、权限断层、安全风险和成本黑洞。Snowflake 的答案是把数据、计算、语义、治理、安全、应用和 Agent 放在同一个闭环里。
+
+## 关键论点
+
+1. Snowflake 的定位正在重构：从 Data Warehouse 到 Enterprise AI Platform
+
+Snowflake 仍然讲 All Data、All Workloads、Iceberg、OpenFlow、Streaming、Zero Copy、Horizon Catalog 等传统数据平台能力，但这些能力现在被重新放入 AI 叙事中：它们不是为了“更好的数据平台”本身，而是为了让企业 AI 和 Agent 能够可靠使用统一数据。
+
+作者认为这不是“加一个 AI 助手”，而是用数据重新构建 Agentic 企业底座。未来数据平台越来越多不是给人直接用，而是给 Agent 用：Agent 理解业务问题、调用数据能力、生成分析过程、提出行动建议，甚至进入业务流程。
+
+2. CoCo、CoWork、Desktop、Skill Catalog 暴露 Snowflake 的 AI 入口野心
+
+Snowflake 发布的一系列 AI Agent 产品组件包括 CoCo、CoWork、Desktop、Skill Catalog、VS Code 插件、Excel 插件、MCP、ACP、Cloud Agents、Agent Teams、自动化 Agent。作者认为这套产品组合很像 Anthropic 的企业 AI 工作系统：Claude / Claude Code / Desktop / MCP / Artifacts / Skills / Computer Use / 企业上下文 / 安全边界。
+
+CoCo 由 Cortex Code 改名而来，意味着它不再只是写 SQL 或补代码的助手，而要成为 Snowflake 平台上的 AI 操作入口。它会进入 CLI、SnowSight、MCP、ACP、SDK、Agent Teams、Cloud Agents、Skill Catalog，并通过 Excel 插件、VS Code 扩展和 Marketplace 合作伙伴形态进入用户原本的工作环境。
+
+作者认为这体现了 AI 原生产品的关键打法：不是让用户迁移到你的界面，而是让 Agent 进入用户已有工作流。CoCo 面向数据工程师和开发者，CoWork 则面向 CEO、销售、运营、市场等业务人员，让他们直接和企业数据对话，像拥有 Jarvis 一样获得洞察。两者合在一起，Snowflake 从后台数据工程走向前台业务决策。
+
+3. AI 把所有软件公司重新拉回同一起跑线
+
+作者提到 Snowflake 发布 Agentic Control Plane（ACP）时，与自己公司刚发布的 ACP 概念撞名。后来发现 Snowflake 的 ACP 更偏 Snowflake 内部数据建模、Text-to-SQL、Semantic Layer 和 Agent 对 Snowflake 数据的调用；作者公司更偏 ETL、Orchestration、Pipeline、数据同步、任务调度和异构系统治理。
+
+重点不是产品是否完全一样，而是所有人都看到同一方向：未来的软件系统必须变成 Agent 可以理解、调用、编排和治理的系统。过去软件是人点界面、填表单、写 SQL、看日志；未来可能是人提出目标，Agent 理解上下文、调用工具、执行任务、反馈结果，人负责确认、监督、判断和纠偏。
+
+这意味着大厂和创业公司都要重新适配 AI。大厂有资源和客户，但也有旧系统、旧架构、旧组织和历史包袱；创业公司如果认知足够快，可以从一开始按 Agent-native 方式设计产品，因此 AI 时代也给创业公司新机会。
+
+4. 作者从 Snowflake 反思白鲸开源的机会：Data Engineering Harness
+
+作者认为自己过去做 DataOps、ETL、Data Ingestion、Orchestration、Pipeline，本质是处理数据流。但 AI 时代的数据不再只是表、字段、文件、日志和任务，还包括 Knowledge、Context、Semantic、Business Rules、Lineage、Execution Memory 和 Agent Action。
+
+Snowflake 的答案是从 Data Warehouse 变成 AI Data Platform；作者给自己的答案是从 DataOps 工具走向 AI 时代的 Data Engineering Harness，也就是面向数据工程师的 Agentic Data Control Plane。
+
+原因是数据工程环境比普通代码开发更复杂：有业务语义、跨系统、跨数据库、跨调度、跨环境、可审计、可回滚等要求。企业级 AI 不能只是“看起来对”，尤其法律、税务、审计、数据开发这些领域都要求结果不能错。因此 Data Engineering Harness 的核心不是更聪明，而是更可信。
+
+5. 作者对 Snowflake 的判断：它在竞争 AI 入口
+
+文章最后把 Snowflake 的机会概括为：AI 正在重构所有软件的入口、形态和价值表达，而 Snowflake 竞争的是企业 AI 入口。作者认为未来 Data + AI 的入口之争，可能不是单纯掌握 AI 的公司赢，因为 AI 平台相对容易切换，而企业数据难以迁移。如果 Snowflake 能把数据优势转化成 AI 入口优势，其价值可能不止近期股价翻倍。
+
+## 我的理解
+
+这篇文章最有价值的点不是“Snowflake 发了哪些功能”，而是抓住了企业软件的入口迁移：过去入口是 UI、SQL、BI、Notebook、Pipeline；现在入口正在变成 Agent、Skill、Context、Workflow。Snowflake 的关键动作是把自己已有的数据、治理、安全和客户基础包装成 Agent 可以调用的企业操作系统。
+
+对创业公司/工具链的启发是：不要只把 AI 当成外挂助手，而要重新定义产品对象。过去软件服务“人类用户操作界面”，未来软件要服务“Agent 可理解、可调用、可治理、可审计的能力集合”。谁能把自己的领域能力转成高可信的 Agent 工具层，谁就有机会在新入口中占位置。
