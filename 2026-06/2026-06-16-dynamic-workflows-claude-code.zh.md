@@ -83,7 +83,7 @@ Saved: 2026-06-16 14:39 +0800
 
 但建立动态工作流如何工作的心智模型，将帮助你理解何时使用它们，以及如何通过 prompt 来引导 Claude。
 
-Claude 在构建工作流时可能会使用并组合以下几种常见模式：
+==Claude 在构建工作流时可能会使用并组合以下几种常见模式：==
 
 ![](https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f16d86247e586b929a407_image10.png)
 
@@ -123,7 +123,7 @@ Claude 在构建工作流时可能会使用并组合以下几种常见模式：
 
 ### 深度研究
 
-我们在 Claude Code 内部发布了一个使用动态工作流的 deep research skill（`/deep-research`）。具体来说，它会 fan-out 网络搜索、获取来源、对抗性地验证其声明，并综合生成带引用的报告。
+我们在 Claude Code 内部发布了一个使用动态工作流的 ==deep research skill==（`/deep-research`）。具体来说，它会 fan-out 网络搜索、获取来源、对抗性地验证其声明，并综合生成带引用的报告。
 
 但你做这类研究不仅仅是为了网络搜索。例如，要求 Claude 从 Slack 上下文中编制状态报告，或通过深入探索代码库来研究某个功能是如何工作的。
 
@@ -131,7 +131,7 @@ Claude 在构建工作流时可能会使用并组合以下几种常见模式：
 
 ![](https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f1721824a27cf13da87f4_image2.png)
 
-另一方面，如果你有一份报告，想要检查并溯源其中引用的每一条事实性声明，你可以生成一个工作流，让一个 agent 识别所有事实性声明，然后为每个声明派生一个 subagent 进行详细检查。你还可以让一个 verification agent 检查 source subagent，确保其来源质量足够高。
+另一方面，如果你有一份报告，==想要检查并溯源其中引用的每一条事实性声明==，你可以生成一个工作流，让一个 agent 识别所有事实性声明，然后为每个声明派生一个 subagent 进行详细检查。你还可以让一个 verification agent 检查 source subagent，确保其来源质量足够高。
 
 ### 排序
 
