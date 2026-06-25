@@ -1,10 +1,6 @@
----
----
-
-
 # Clippings Index
 
-Updated: 2026-06-22 03:13:24
+Updated: 2026-06-24 01:34:55
 
 ## 2026-06
 
@@ -23,6 +19,7 @@ Updated: 2026-06-22 03:13:24
 - [x] 2026-06-03 — [Managed Postgres, Examined: Azure Database for PostgreSQL Flexible Server](2026-06/2026-06-03-azure-postgres-flexible-server.md)
 #### AI / LLM / Agent
 
+- [x] 2026-06-22 — [A harness for every task: dynamic workflows in Claude Code](summaries/2026-06/2026-06-16-dynamic-workflows-claude-code.summary.md) ([source](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code))
 - [x] 2026-06-16 — [为每个任务定制 harness：Claude Code 中的动态工作流  | Claude](2026-06/2026-06-16-dynamic-workflows-claude-code.zh.md) / [EN: A harness for every task: dynamic workflows in…](2026-06/2026-06-16-dynamic-workflows-claude-code.md) ([source](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code))
 - [x] 2026-06-12 — [Claude Fable is relentlessly proactive](summaries/2026-06/2026-06-12-claude-fable-relentlessly-proactive.summary.md) ([source](https://x.com/simonw/status/2065216774992515342))
 - [x] 2026-06-10 — [Every Agentic Engineering Hack I Know (June 2026)](summaries/2026-06/2026-06-08-mvanhorn-agentic-engineering-hacks-june-2026.summary.md) ([source](https://x.com/mvanhorn/status/2061877533885473181?s=20))

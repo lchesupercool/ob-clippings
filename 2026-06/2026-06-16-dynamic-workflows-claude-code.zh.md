@@ -143,13 +143,13 @@ Saved: 2026-06-16 14:39 +0800
 
 ![](https://cdn.prod.website-files.com/68a44d4040f98a4adf2207b6/6a1f17517076bb59050d90bb_image8.png)
 
-如果你有一些特定的规则，即使放在 `CLAUDE.md` 中，你发现 Claude 仍然会遗漏或难以遵循，那么就创建一个工作流，包含一个规则列表，由 verifier agents 逐一检查——每条规则一个 verifier。创建一个 skeptic persona subagent 来审查这些规则，确保它们符合预期，将有助于避免过多的误报。
+如果你有一些特定的规则，即使放在 `CLAUDE.md` 中，你发现 Claude 仍然会遗漏或难以遵循，那么就创建一个工作流，包含一个规则列表，由 verifier agents 逐一检查——每条规则一个 verifier。==创建一个 skeptic persona subagent 来审查这些规则，确保它们符合预期，将有助于避免过多的误报。==
 
 反向路径同样有效：挖掘你最近的 session 和 code review 评论中反复出现的修正，用并行 agents 聚类，对抗性地验证每个候选规则（这条规则是否真的能防止某个真实错误？），然后将幸存者提炼回 `CLAUDE.md`。
 
 ### 根因调查
 
-当你提出几个独立的假设并逐一测试时，调试效果最好。但如果你只使用一个 context window，Claude 可能会陷入 self-preferential bias。
+==当你提出几个独立的假设并逐一测试时，调试效果最好。但如果你只使用一个 context window，Claude 可能会陷入 self-preferential bias。==
 
 工作流可以通过从不相交的证据中派生 agents 生成假设来从结构上防止这种情况的发生。例如，为日志、文件和数据分别分配 agent。然后每个假设面对一组 verifiers 和 refuters 的评审。
 
@@ -193,7 +193,7 @@ triage 工作流的一个有用模式是 quarantine（隔离）。这涉及阻�
 
 ### Prompt 编写
 
-使用我们上述描述的具体技术，为动态工作流编写详细的 prompt 能获得最佳结果。
+使用我们上述描述的具体技术，==为动态工作流编写详细的 prompt 能获得最佳结果==。
 
 工作流不仅仅用于大型任务。你可以 prompt 模型使用"快速工作流"。例如，你可以对某个假设进行一次快速的对抗性审查。
 
