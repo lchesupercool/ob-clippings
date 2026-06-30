@@ -1,6 +1,6 @@
 # Clippings Index
 
-Updated: 2026-06-24 01:34:55
+Updated: 2026-06-30 03:11:38
 
 ## 2026-06
 
@@ -19,6 +19,7 @@ Updated: 2026-06-24 01:34:55
 - [x] 2026-06-03 — [Managed Postgres, Examined: Azure Database for PostgreSQL Flexible Server](2026-06/2026-06-03-azure-postgres-flexible-server.md)
 #### AI / LLM / Agent
 
+- [ ] 2026-06-28 — [“医生，我一看到代理创建不可审查的 PR 就难受。”“那就别这么做。”](2026-06/2026-06-29-jon-udell-unreviewable-prs.zh.md) / [EN: “Doctor, it hurts when agents create unreviewab…](2026-06/2026-06-29-jon-udell-unreviewable-prs.md) ([source](https://blog.jonudell.net/2026/06/28/doctor-it-hurts-when-agents-create-unreviewable-prs-dont-do-that/))
 - [x] 2026-06-22 — [A harness for every task: dynamic workflows in Claude Code](summaries/2026-06/2026-06-16-dynamic-workflows-claude-code.summary.md) ([source](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code))
 - [x] 2026-06-16 — [为每个任务定制 harness：Claude Code 中的动态工作流  | Claude](2026-06/2026-06-16-dynamic-workflows-claude-code.zh.md) / [EN: A harness for every task: dynamic workflows in…](2026-06/2026-06-16-dynamic-workflows-claude-code.md) ([source](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code))
 - [x] 2026-06-12 — [Claude Fable is relentlessly proactive](summaries/2026-06/2026-06-12-claude-fable-relentlessly-proactive.summary.md) ([source](https://x.com/simonw/status/2065216774992515342))
