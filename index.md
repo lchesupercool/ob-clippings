@@ -1,7 +1,20 @@
 # Clippings Index
 
-Updated: 2026-06-30 03:11:38
+Updated: 2026-07-04 03:53:33
 
+## 2026-07
+
+#### 数据库 / PostgreSQL
+
+- [x] 2026-07-03 — [Postgres 事务是分布式系统的超能力](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.zh.md) / [EN: Postgres Transactions are a Distributed Systems…](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.md) ([source](https://www.dbos.dev/blog/co-locating-workflow-state-with-your-data))
+#### 个人成长 / 学习 / 生活
+
+- [x] 2026-07-03 — [Chamath：The Great Descent 总结](summaries/2026-07/2026-07-03-chamath-the-great-descent.summary.md) ([source](https://x.com/chamath/status/2072618494324027489?s=52))
+#### 其他
+
+- [x] 2026-07-03 — [这四个工作习惯，或许也能帮你找到掌控感 — 摘要](summaries/2026-07/2026-07-03-sspai-four-work-habits-control.summary.md) ([source](https://sspai.com/post/111708))
+- [x] 2026-07-03 — [这四个工作习惯，或许也能帮你找到掌控感](2026-07/2026-07-03-sspai-four-work-habits-control.md) ([source](https://sspai.com/post/111708))
+- [x] 2024-09-23 — [基于栈的迭代式 DFS 图遍历](2026-07/2026-07-03-dfs-iterative-stack-based.zh.md) / [EN: Iterative DFS with stack-based graph traversal](2026-07/2026-07-03-dfs-iterative-stack-based.md) ([source](https://dwf.dev/blog/2024/09/23/2024/dfs-iterative-stack-based/))
 ## 2026-06
 
 #### 数据库 / PostgreSQL
@@ -19,7 +32,7 @@ Updated: 2026-06-30 03:11:38
 - [x] 2026-06-03 — [Managed Postgres, Examined: Azure Database for PostgreSQL Flexible Server](2026-06/2026-06-03-azure-postgres-flexible-server.md)
 #### AI / LLM / Agent
 
-- [ ] 2026-06-28 — [“医生，我一看到代理创建不可审查的 PR 就难受。”“那就别这么做。”](2026-06/2026-06-29-jon-udell-unreviewable-prs.zh.md) / [EN: “Doctor, it hurts when agents create unreviewab…](2026-06/2026-06-29-jon-udell-unreviewable-prs.md) ([source](https://blog.jonudell.net/2026/06/28/doctor-it-hurts-when-agents-create-unreviewable-prs-dont-do-that/))
+- [x] 2026-06-28 — [“医生，我一看到代理创建不可审查的 PR 就难受。”“那就别这么做。”](2026-06/2026-06-29-jon-udell-unreviewable-prs.zh.md) / [EN: “Doctor, it hurts when agents create unreviewab…](2026-06/2026-06-29-jon-udell-unreviewable-prs.md) ([source](https://blog.jonudell.net/2026/06/28/doctor-it-hurts-when-agents-create-unreviewable-prs-dont-do-that/))
 - [x] 2026-06-22 — [A harness for every task: dynamic workflows in Claude Code](summaries/2026-06/2026-06-16-dynamic-workflows-claude-code.summary.md) ([source](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code))
 - [x] 2026-06-16 — [为每个任务定制 harness：Claude Code 中的动态工作流  | Claude](2026-06/2026-06-16-dynamic-workflows-claude-code.zh.md) / [EN: A harness for every task: dynamic workflows in…](2026-06/2026-06-16-dynamic-workflows-claude-code.md) ([source](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code))
 - [x] 2026-06-12 — [Claude Fable is relentlessly proactive](summaries/2026-06/2026-06-12-claude-fable-relentlessly-proactive.summary.md) ([source](https://x.com/simonw/status/2065216774992515342))
