@@ -1,5 +1,5 @@
 ---
-title: "Fable 实战指南：找出你的未知项"
+title: "Fable 田野指南：发现你的未知项"
 source: "https://x.com/trq212/status/2073100352921215386"
 canonical: "https://x.com/trq212/article/2073100352921215386"
 author: "Thariq (@trq212)"
@@ -8,136 +8,130 @@ saved: "2026-07-05 20:15:17 +0800"
 tags: [ai-coding, claude, agentic-coding, x-article]
 ---
 
-# Fable 实战指南：找出你的未知项
+# Fable 田野指南：发现你的未知项
 
 Thariq [@trq212](https://x.com/trq212)
 
 ![文章封面图](../../assets/a-field-guide-to-fable-finding-your-unknowns/cover.jpg)
 
-使用 Claude Fable 5 时，它不断让我重新学到一个老道理：地图不是领土。
-地图，也就是对待完成工作的表示，是我的 prompts、skills 和 context，是我给 Claude 的东西。领土才是工作真正发生的地方：代码库、真实世界，以及其中实际存在的约束。
+与 Claude Fable 5 一起工作，不断让我重新学到一个老道理：地图不等于疆域。
+地图，是对待完成工作的表征：我的提示词、skills 和上下文，也就是我交给 Claude 的东西。疆域，才是真正需要发生工作的地方：代码库、现实世界，以及其中真实存在的约束。
 
-地图和领土之间的差异，就是我所说的 unknowns。当 Claude 遇到一个 unknown 时，它必须根据自己对我想要什么的最佳猜测来做决定。要完成的工作越多，Claude 可能遇到的 unknowns 就越多。
-Fable 是第一个让我觉得工作质量受限于我澄清 unknowns 能力的模型。
-重要的是，提前规划并不总是足够。你可能会在实现深处才发现 unknowns，或者你的 unknowns 会让你意识到：你其实应该用完全不同的方式解决问题。
-我发现，和 Fable 一起工作，是一个在实现前、实现中、实现后不断发现自己 unknowns 的迭代过程。
-我在这里做了一些用于发现 unknowns 的示例 artifacts，但请先读完，建立什么时候使用它们的直觉。
+地图和疆域之间的差距，就是我所说的「未知项」。当 Claude 遇到一个未知项时，它必须根据自己对我意图的最佳猜测来做决定。要完成的工作越多，Claude 可能遇到的未知项就越多。
+Fable 是第一个让我明显感觉到：工作质量的瓶颈在于我澄清其未知项能力的模型。
+重要的是，仅仅提前规划并不总是足够。你可能会在实现深处发现未知项；也可能发现这些未知项指向一个事实：你其实应该用完全不同的方式解决问题。
+我发现，与 Fable 协作，是一个在实现前、实现中和实现后不断发现自己未知项的迭代过程。
+我在这里做了一些用于发现未知项的示例工件，但请务必读完本文，先建立什么时候该使用它们的直觉。
 
-## 认识你的 unknowns
+## 认识你的未知项
 
-什么是你的 unknowns？当我带着一个问题来找 Claude 时，我通常会把它拆成 4 类：
-- **Known Knowns：**本质上就是我 prompt 里写出来的东西。我告诉 agent 我想要什么？
-- **Known Unknowns：**有哪些东西我还没想清楚，但我知道自己还没想清楚？
-- **Unknown Knowns：**有哪些东西明显到我永远不会写下来，但只要看到我就能认出来？
-- **Unknown Unknowns：**有哪些东西我完全没考虑过？有哪些知识是我不知道自己不知道的？我知道一件事可以好到什么程度吗？
+什么是你的未知项？当我带着一个问题来找 Claude 时，我通常会从 4 个角度拆解它：
+- **已知的已知：**这基本上就是我写在提示词里的内容。我告诉智能体，我想要什么？
+- **已知的未知：**有哪些事情我还没有弄清楚，但我知道自己还没有弄清楚？
+- **未知的已知：**有哪些东西对我来说显而易见，以至于我根本不会写下来，但一旦看到就能认出来？
+- **未知的未知：**有哪些事情是我完全没有考虑过的？有哪些知识是我还不知道自己不知道的？我是否知道一件事可以做到多好？
 
-最好的 agentic coders 通常 unknowns 相对较少。看 Boris 或 Jarred 这样的人写 prompt，我很明显能感觉到，他们非常细致地知道自己想要什么。他们既和代码库高度同步，也和模型行为高度同步。
-但他们也会假设 unknowns 的存在。在很多意义上，减少并规划你的 unknowns，就是 agentic coding 的核心技能。幸运的是，这是一项可以通过和 Claude 一起工作而提升的技能。
+最优秀的智能体式程序员往往拥有相对更少的未知项。看 Boris 或 Jarred 这样的人写提示词，我很明显能感觉到，他们非常细致地知道自己想要什么。他们既与代码库高度同步，也与模型行为高度同步。
+但他们也会预设未知项的存在。从很多意义上说，减少并为你的未知项做规划，就是智能体式编程的核心技能。幸运的是，这是一项可以通过与 Claude 协作不断提升的技能。
 
-## 帮 Claude 帮你
+## 帮助 Claude 帮助你
 
-指挥 Claude 是一种微妙的平衡。如果你太具体，Claude 会照着你的指令走，即使这时转向可能更合适。如果你太模糊，Claude 往往会基于行业最佳实践来做选择和假设，而这些最佳实践未必适合你的任务。
-当你没有处理自己的 unknowns 时，两边都会失败。你不知道前方什么时候布满障碍，也不知道什么时候道路其实很清晰、但你仍然希望 Claude 能够偏航调整。
-Claude 可以帮助你更快发现 unknowns。它能非常快地搜索你的代码库和互联网，而且它对大多数主题的了解都比你多。它也能更快地从失败中迭代。
-这个过程中最重要的部分，是给 Claude 你的起点上下文。比如，告诉它你当前思考到哪一步；说明你对这个问题和代码库的经验；让它像一个思考伙伴一样和你协作。
-我之前写过关于和 Claude 一起使用 HTML 的文章；在几乎所有这些场景里，HTML artifact 都是可视化和表示内容的最佳方式。
-在这篇文章里，我会详细说明一些我用来挖掘 unknowns 的模式。我不是每次都会用所有技巧，但这是一组很有用的技巧库。
+给 Claude 下指令是一种微妙的平衡。如果你过于具体，Claude 会照着你的指令执行，即使此时转向另一种方案可能更合适。如果你过于模糊，Claude 往往会基于行业最佳实践做出选择和假设，而这些选择和假设未必适合你的任务。
+当你没有考虑自己的未知项时，两种情况都会失败。你不知道前方道路什么时候会布满障碍，也不知道什么时候道路其实很顺畅，但你仍然希望 Claude 能够在必要时调整方向。
+Claude 可以帮助你更快发现未知项。它能够非常快速地搜索你的代码库和互联网，而且在大多数主题上掌握的通用知识比你更多。它也能更快地从失败中迭代。
+这个过程中最重要的一点，是给 Claude 足够的起点上下文。例如，告诉它你当前思考到哪一步；说明你对这个问题和代码库的经验；让它像一个思考伙伴一样与你协作。
+我之前写过关于如何与 Claude 一起使用 HTML 的文章；在几乎所有这些场景中，HTML 工件都是可视化和表达想法的最佳方式。
+在这篇文章中，我会详细介绍一些自己用来发现这些未知项的模式。我不是每次都会使用所有技巧，但把它们作为一组可调用的方法储备起来，会非常有用。
 
 ## 实现前
 
-### Blind Spot Pass
+### 盲点扫描
 
-开始工作时，最有用的事情之一，是理解你的盲点。比如，如果你要在代码库的一个新区域写功能，或者用 Claude 帮你做一个不熟悉的工作，比如迭代设计，你很可能会有很多 unknown unknowns。
-你可能不知道该问什么问题，不知道“好”应该长什么样，不知道过去做过哪些历史工作，也不知道要避开哪些坑。
-要做到这一点，你可以让 Claude 帮你找出 unknown unknowns，并向你解释。我喜欢直接使用 “blindspot pass” 和 “unknown unknowns” 这两个词。通常也很重要的是，给它关于你是谁、你知道什么的上下文。
+开始工作时，最有用的事情之一，是理解自己的盲点。例如，如果你正在代码库的一个新区域编写功能，或者让 Claude 帮你处理某种不熟悉的工作，比如迭代一个设计方案，那么你很可能会有大量「未知的未知」。
+你可能不知道该问什么问题，不知道什么才算好，不知道过去已经做过哪些历史工作，也不知道有哪些坑应该避免。
+要做到这一点，你可以让 Claude 帮你找出「未知的未知」，并向你解释。我喜欢直接使用 “blindspot pass” 和 “unknown unknowns” 这些字眼。通常来说，告诉它你是谁、你知道什么，也很重要。
 
-### 示例 Prompts
+### 示例提示词
 
-> “I'm working on adding a new auth provider but I know nothing about the auth modules in this codebase. Can you do a blindspot pass to help me figure out my relevant unknown unknowns and help me prompt you better.”
-> “I don’t know what color grading is but I need to grade this video. Can you teach me to understand my unknown unknowns about color grading, so that I can prompt better?”
+> “我正在添加一个新的认证提供方，但我对这个代码库里的认证模块一无所知。你能不能做一次 blindspot pass，帮我找出相关的 unknown unknowns，并帮助我更好地给你写提示词？”
+> “我不了解调色，但我需要给这个视频做调色。你能不能教我理解自己在调色方面的 unknown unknowns，这样我就能写出更好的提示词？”
 
-### Brainstorms and prototypes
+### 头脑风暴与原型
 
-当我在一个有大量 unknown knowns 的领域工作时，也就是那些标准只有看到后我才知道怎么定义的地方，我喜欢让 Claude 和我一起 brainstorm 和 prototype。
-在 prototyping 的早期识别并说清楚 unknown knowns 非常有价值，因为如果在 implementation 阶段才发现它们，代价可能会相对较高。一个 feature 或 spec 的小改动，可能导致代码里截然不同的实现，而且你的 agent 可能更难回滚之前的修改。
-比如，你可能只是想看看把一个按钮加到 frame 里是什么效果，而不想为了它接一个 backend route，或在 frontend 里维护额外 state。
-视觉设计对我来说很难表达，但我看到之后就知道自己想要什么。在这些情况下，我会要求它为一个 artifact 给出几种设计方向。
-我也几乎会在每次 coding session 开始时先做一轮 exploration 或 brainstorming。这帮助我从定义项目 scope 的意图开始。Claude 经常能找到我会错过的高价值路径，有时也会只见树木不见森林。Brainstorming 可以防止我把 scope 设得太窄或太宽。
+当我在一个有很多「未知的已知」的领域工作时，也就是那些只有看到之后我才知道如何定义标准的事情，我喜欢让 Claude 和我一起头脑风暴、做原型。
+在原型阶段尽早识别并表达这些「未知的已知」非常有价值，因为如果到了实现阶段才发现它们，代价往往会相对更高。功能或规格中的一些小变化，可能会导致代码实现发生巨大差异，而且让智能体回退之前的修改也会更困难。
+例如，你可能只是想看看在某个框架里加一个按钮是什么效果，而并不想真正接入后端路由，也不想在前端维护额外状态。
+视觉设计对我来说就是一种很难清楚表达的东西，但我看到之后会知道自己想要什么。在这种情况下，我会要求 Claude 针对一个工件给出几种不同的设计方向。
+我几乎也会在每次编码会话一开始，都先进行探索或头脑风暴。这能帮助我带着明确意图来定义项目范围。Claude 经常会发现一些我本来会错过的高价值方案，但它有时也会只见树木不见森林。头脑风暴可以防止我一开始就把范围设得过窄或过宽。
+示例提示词：
+“我想为这组数据做一个仪表盘，但我没有什么视觉品味，也不知道可以做到什么程度。帮我做一个 HTML 页面，给出 4 种风格差异很大的设计方向，好让我根据结果做反馈。”
+“在真正接线之前，先用假数据做一个单独的 HTML 文件，模拟新的编辑器工具栏。我想先对布局做反馈，然后你再去动真实应用。”
+“这是我的粗略问题：用户在完成 onboarding 后流失。搜索代码库，头脑风暴 10 个我们可以介入的地方，从最低成本到最有野心的方案都列出来。我会告诉你哪些方向更有感觉。”
 
-示例 prompts：
-"I want a dashboard for this data but I have no visual taste and don't know what's possible. Make me an HTML page with 4 wildly different design directions so I can react to them.”
-“Before wiring anything up, make a single HTML file mocking the new editor toolbar with fake data. I want to react to the layout before you touch the treal app."
-"Here's my rough problem: users churn after onboarding. Search the codebase and brainstorm 10 places we could intervene, from cheapest to most ambitious. I'll tell you which ones resonate."
+### 访谈
 
-Interviews
+在完成了足够的头脑风暴之后，我通常仍然会有未知项。
+这种情况下，我会让 Claude 围绕任何不明确或存在歧义的地方来采访我。让 Claude 采访你时，尽量提供关于问题的上下文，以便它提出更有针对性的问题。下面是一些例子。
+示例提示词：
+“一次只问我一个问题，围绕任何存在歧义的地方采访我。优先提出那些我的回答会改变架构设计的问题。”
 
-当我已经做了足够的 brainstorming 后，我很可能仍然有 unknowns。
-这种情况下，我会让 Claude 针对任何 unknowns 或 ambiguities 来采访我。让 Claude 采访你时，尽量给它关于问题的上下文，以引导它的问题。下面是一些例子。
+### 参考资料
 
-示例 prompts：
-"Interview me one question at a time about anything ambiguous, prioritize questions where my answer would change the architecture."
+有时候，你无法详细描述自己想要什么。比如，你可能没有对应的表达语言，或者这件事太复杂，要完整描述会花很长时间。
+在这种情况下，最好的答案就是参考资料。你可以提供图表、文档或图片，但最好的参考资料其实是源代码。
+如果你有一个库用某种特定方式实现了某个功能，或者有一个你非常喜欢的设计组件，那就直接把 Fable 指向对应文件夹，并告诉它该看什么。即使参考代码是另一种语言写的，也没有关系。
+这也是 Claude Design 的工作方式。你不一定非要给它一个文件（当然你也可以这么做）。你可以把它指向你喜欢的某个网站模块，它会读取底层代码，而不仅仅是截图。这样可以提供更丰富的细节，包括标记结构、组件组织方式，以及这个组件实际上是如何构建的。
+示例提示词：
+vendor/rate-limiter 里的这个 Rust crate 实现的正是我想要的回退重试行为。请阅读它，并在我们的 TypeScript API 客户端中重新实现相同的语义。
 
-References
+### 实现计划
 
-有时你没法详细描述自己想要什么。比如，你可能没有相应的语言，或者它太复杂，要描述清楚会花很长时间。
-这种情况下，最好的答案是 reference。你可以提供图、文档或图片，但绝对最好的 reference 是 source code。
-如果你有一个 library 用某种方式实现了你想要的东西，或者有一个你很喜欢的 design component，就把 Fable 指向那个 folder，并告诉它要看什么，即使它是用另一种语言写的。
-这也是 Claude Design 的工作方式。你不需要手动给它一个文件（当然也可以）。你可以把它指向某个你喜欢的网站模块，它会读取底层代码，而不只是截图。这能提供关于 markup、structure 以及组件实际构建方式的丰富细节。
+当我觉得已经准备好开始实现时，我通常会让 Claude 先整理一份实现计划供我审阅，并重点关注那些最可能发生变化的部分，例如数据模型、类型接口或 UX 流程。这样可以让 Claude 提前暴露出一些我可能确实需要调整的地方。
 
-示例 prompts：
-This Rust crate in vendor/rate-limiter implements the exact backoff behavior I want. Read it and reimplement the same semantics in our TypeScript API client.
+### 示例提示词
 
-Implementation Plans
-
-当我觉得已经准备好实现时，我通常会让 Claude 给我做一个 implementation plan 供我 review，重点关注最可能发生变化的部分，比如 review data models、type interfaces 或 UX flows。这能让 Claude 暴露出一些我实际上可能需要调整的东西。
-
-### 示例 Prompts
-
-Write an implementation plan in HTML, but lead with the decisions I'm most likely to tweak with: data model changes, new type interfaces, and anything user-facing. Bury the mechanical refactoring at the bottom, I trust you on that part."
+用 HTML 写一份实现计划，但开头先呈现我最可能会修改的决策点：数据模型变更、新的类型接口，以及任何面向用户的内容。机械性的重构放在最下面，那部分我相信你可以处理。”
 
 ## 实现中
 
-Implementation notes
+### 实现笔记
 
-当我对 plan 满意后，我会新开一个 session，并把相关 artifacts 传给 prompt。比如，我可能会传入一个 spec file 和一个 prototype，然后让 agent 去实现它。
-但事实是，无论你规划得多充分，总会有 unknown unknowns 潜伏着。agent 在工作过程中可能会因为发现代码里的某个 edge case，而不得不采取不同路线。
-我会要求 Claude Code 维护一个临时的 `implementation-notes.md`（或 `.html`）文件，在里面记录它做出的决策，这样我们可以从下一次尝试中学习。
+当我对计划满意后，会开启一个新的会话，并把相关工件传入提示词。例如，我可能会传入一份规格文件和一个原型，然后让智能体来实现它。
+但事实是，无论你做了多少规划，总会有「未知的未知」潜伏着。智能体在工作过程中可能会发现，由于代码中的某个边界情况，它必须换一种思路。
+我会要求 Claude Code 维护一个临时的 `implementation-notes.md`（或 `.html`）文件，用来记录它做出的决策，这样我们就能从下一次尝试中学习。
+示例提示词：
+“请维护一个 `implementation-notes.md` 文件。如果你遇到某个边界情况，导致你必须偏离原计划，请选择保守方案，在 ‘Deviations’ 下面记录原因，然后继续推进。”
 
-示例 prompts：
-"Keep an implementation-notes.md file. If you hit an edge case that forces you to deviate from the plan, pick the conservative option, log it under 'Deviations', and keep going."
+## 实现后
 
-Post implementation
+### 推介与解释文档
 
-Pitches and explainers
+发布某个东西时，最重要的事情之一，是获得他人的理解、支持和批准。在最终文档中构建推介和解释类工件，有助于：
+加速评审者理解，尤其是当他们一开始也带着和你相同的未知项时。
+加速审批，尤其是当专家想确认你已经考虑到他们本来会预见的未知项和常见失败点时。
+示例提示词：
+“把原型、规格说明和实现笔记打包成一个单独的文档，我可以直接发到 Slack 里争取支持。开头先放演示 GIF。”
 
-发布某个东西时，最重要的部分之一是获得 buy-in 和 approvals。在最终文档里构建 pitch 和 explainer artifacts 可以帮助：
-加速理解，因为 reviewers 一开始也带着和你一样的 unknowns。
-加速 approvals，因为专家希望看到你已经考虑到了他们会预判到的 unknowns 和常见 failure points。
+### 测验
 
-示例 prompts：
-"Package the prototype, the spec, and the implementation notes into a single doc I can drop in Slack to get buy-in. Lead with the demo GIF."
+经过一次漫长的工作会话后，Claude 可能已经完成了比我意识到的更多工作。只看代码 diff 往往只能让我对发生了什么有一个浅层理解，因为很多行为都取决于既有代码路径。
+让 Claude 在给我大量上下文之后，再围绕这次变更来测试我，可以帮助我真正理解发生了什么。我只有在完美通过测验之后，才会合并代码。
+示例提示词：
+> “我想确保自己理解了这次变更里发生的一切。请给我一份 HTML 报告，帮助我阅读和理解这些变更，包括上下文、直觉解释、具体做了什么等等，并在底部附上一份我必须通过的测验。”
 
-Quizzes
+## 串联方法：以发布 Fable 为例
 
-经过一次长时间工作 session 后，Claude 可能完成的事情比我意识到的多得多。读 code diffs 只能让我浅层理解发生了什么，因为很多行为会取决于已有代码路径。
-在 Claude 给我大量上下文之后，让它围绕这次 change 来 quiz 我，可以帮助我理解发生了什么。我只有在完美通过 quiz 后才会 merge。
-
-示例 prompts：
-> “I want to make sure I understand everything that's happened in this change. Give me a HTML report on the changes for me to read and understand with context, intuition, what was done, etc. and a quiz at the bottom on the changes that I must pass.”
-
-How this comes together: launching Fable
-
-Fable 的 launch video 完全由 Claude Code 剪辑。这对我来说是一个新领域，我绝不是专家。
-所以我从自己已知的东西开始。我知道 Claude 可以用代码剪辑视频并转录它们，但我不确定它是否足够准确。于是我让 Claude 向我解释 Whisper 这样的 transcription 是如何工作的，以及我是否能用 ffmpeg 准确剪掉 ums 或较长停顿。
-我希望 Claude 创建一个和我说话词句同步的 UI，但不确定它是否能做到，所以我让 Claude 使用 Remotion 和 transcription 创建一个 prototype video，看看是否可行。
-最后，视频本身看起来有点灰暗。我知道这是 color grading 的结果，但我并不真正知道 color grading 是什么。我的第一次尝试是让 Claude 做几个 variation 让我选择，但我意识到，对于 color grading 来说，我不知道什么才叫“好”。所以我转而让 Claude 教我 color grading，帮助我发现自己的 unknowns。
+Fable 的发布视频完全是由 Claude Code 剪辑完成的。这对我来说是一个全新的领域，而我绝不是这方面的专家。
+所以我从自己已知的部分开始。我知道 Claude 可以用代码来编辑视频并进行转录，但我不确定它的准确度是否足够。于是我让 Claude 向我解释 Whisper 这类转录技术是如何工作的，以及我是否能够用 ffmpeg 准确剪掉 “um” 这样的语气词或较长的停顿。
+我希望 Claude 创建一个 UI，并让它与我说出的词语在时间上同步，但我不确定它是否能做到。于是我让 Claude 使用 Remotion 和转录文本创建一个视频原型，看看这个想法是否可行。
+最后，视频本身看起来有些灰暗。我知道这是调色问题，但我并不真正了解什么是调色。我第一次尝试时，是想让 Claude 做几个版本让我来选，但我意识到，当涉及调色时，我并不知道什么才算「好」。于是，我没有继续让它盲目生成版本，而是让 Claude 教我调色，以此发现自己的未知项。
 你可以在这里观看更深入的解释。
 
-Matching the Map and Territory
+## 让地图与疆域匹配
 
-模型越好，用正确方法能完成的事情就越多。当一个 long-horizon task 返回了错误结果，很可能说明你需要花更多时间定义自己的 unknowns，或创建一个允许 Claude 在 unknowns 中即兴调整的 implementation plan。
-每一个 explainer、brainstorm、interview、prototype 和 reference，都是一种低成本方式，能在修复成本变高之前发现你原本不知道的东西。
-所以，下一个项目开始时，先让 Claude 帮你找出你的 unknowns。
+模型越强，你就越能通过正确的方法完成更多事情。当一个长周期任务返回了错误结果时，很可能说明你需要花更多时间定义自己的未知项，或者创建一份实现计划，让 Claude 能够在这些未知项中灵活应对。
+每一份解释文档、头脑风暴、访谈、原型和参考资料，都是一种低成本的方法，可以在修复代价变高之前，先发现那些你原本不知道的事情。
+所以，在开始下一个项目时，先让 Claude 帮你找到自己的未知项。
 
 ## 提到的链接
 

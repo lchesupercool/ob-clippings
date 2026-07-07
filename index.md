@@ -1,12 +1,16 @@
 # Clippings Index
 
-Updated: 2026-07-06 01:41:46
+Updated: 2026-07-07 06:00:59
 
 ## 2026-07
 
 #### 数据库 / PostgreSQL
 
+- [x] 2026-07-05 — [页级别的 VACUUM](2026-07/2026-07-06-vacuum-at-the-page-level.zh.md) / [EN: VACUUM at the Page Level](2026-07/2026-07-06-vacuum-at-the-page-level.md) ([source](https://boringsql.com/posts/vacuum-at-the-page-level/))
 - [x] 2026-07-03 — [Postgres 事务是分布式系统的超能力](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.zh.md) / [EN: Postgres Transactions are a Distributed Systems…](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.md) ([source](https://www.dbos.dev/blog/co-locating-workflow-state-with-your-data))
+#### AI / LLM / Agent
+
+- [x] 2026-07-06 — [Claude工程师终于交出Fable 5焚诀！教你打破和模型之间的信息差](2026-07/2026-07-06-claude-fable-5-unknowns-jqzhixin.md) ([source](https://mp.weixin.qq.com/s?__biz=MzA3MzI4MjgzMw==&mid=2651042720&idx=1&sn=d906c197f96af8e07e57e74c70a41480&chksm=850238f45fc05aaebc001d45dfc6a2a340911e576ac0e0db4aabe6970b1183f4a4b71c757fa3&mpshare=1&scene=1&srcid=0705SzmnhNYNPPnlrRT8WmK6&sharer_shareinfo=d0608897ca2217c7386725563d344704&sharer_shareinfo_first=d0608897ca2217c7386725563d344704))
 #### 个人成长 / 学习 / 生活
 
 - [x] 2026-07-03 — [Chamath：The Great Descent 总结](summaries/2026-07/2026-07-03-chamath-the-great-descent.summary.md) ([source](https://x.com/chamath/status/2072618494324027489?s=52))
@@ -14,7 +18,7 @@ Updated: 2026-07-06 01:41:46
 
 - [x] 2026-07-03 — [这四个工作习惯，或许也能帮你找到掌控感 — 摘要](summaries/2026-07/2026-07-03-sspai-four-work-habits-control.summary.md) ([source](https://sspai.com/post/111708))
 - [x] 2026-07-03 — [这四个工作习惯，或许也能帮你找到掌控感](2026-07/2026-07-03-sspai-four-work-habits-control.md) ([source](https://sspai.com/post/111708))
-- [x] 2026-07-03 — [Fable 实战指南：找出你的未知项](2026-07/2026-07-05-a-field-guide-to-fable-finding-your-unknowns.zh.md) / [EN: A Field Guide to Fable: Finding Your Unknowns](2026-07/2026-07-05-a-field-guide-to-fable-finding-your-unknowns.md) ([source](https://x.com/trq212/status/2073100352921215386))
+- [x] 2026-07-03 — [Fable 田野指南：发现你的未知项](2026-07/2026-07-05-a-field-guide-to-fable-finding-your-unknowns.zh.md) / [EN: A Field Guide to Fable: Finding Your Unknowns](2026-07/2026-07-05-a-field-guide-to-fable-finding-your-unknowns.md) ([source](https://x.com/trq212/status/2073100352921215386))
 - [x] 2024-09-23 — [基于栈的迭代式 DFS 图遍历](2026-07/2026-07-03-dfs-iterative-stack-based.zh.md) / [EN: Iterative DFS with stack-based graph traversal](2026-07/2026-07-03-dfs-iterative-stack-based.md) ([source](https://dwf.dev/blog/2024/09/23/2024/dfs-iterative-stack-based/))
 ## 2026-06
 
