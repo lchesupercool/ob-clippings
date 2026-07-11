@@ -1,6 +1,6 @@
 # Clippings Index
 
-Updated: 2026-07-09 01:49:40
+Updated: 2026-07-11 03:30:40
 
 ## 2026-07
 
@@ -10,6 +10,7 @@ Updated: 2026-07-09 01:49:40
 - [x] 2026-07-03 — [Postgres 事务是分布式系统的超能力](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.zh.md) / [EN: Postgres Transactions are a Distributed Systems…](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.md) ([source](https://www.dbos.dev/blog/co-locating-workflow-state-with-your-data))
 #### AI / LLM / Agent
 
+- [x] 2026-07-10 — [真正工程师使用的 Skills](2026-07/2026-07-10-github-mattpocock-skills.zh.md) / [EN: Skills For Real Engineers](2026-07/2026-07-10-github-mattpocock-skills.md) ([source](https://github.com/mattpocock/skills))
 - [x] 2026-07-08 — [Pulpie：用于清洗 Web 的 Pareto 最优模型 — 中文摘要](summaries/2026-07/2026-07-08-pulpie-pareto-optimal-models-for-cleaning-the-web.summary.md) ([source](https://usefeyn.com/blog/pulpie-pareto-optimal-models-for-cleaning-the-web/))
 - [x] 2026-07-07 — [通过 Harness 工程实现 AI 自我提升 — 中文摘要](summaries/2026-07/2026-07-07-harness-engineering-self-improvement.summary.md) ([source](https://mp.weixin.qq.com/s/kZrryL8_fxfq2pSFw6LSqg))
 - [x] 2026-07-06 — [Claude工程师终于交出Fable 5焚诀！教你打破和模型之间的信息差](2026-07/2026-07-06-claude-fable-5-unknowns-jqzhixin.md) ([source](https://mp.weixin.qq.com/s?__biz=MzA3MzI4MjgzMw==&mid=2651042720&idx=1&sn=d906c197f96af8e07e57e74c70a41480&chksm=850238f45fc05aaebc001d45dfc6a2a340911e576ac0e0db4aabe6970b1183f4a4b71c757fa3&mpshare=1&scene=1&srcid=0705SzmnhNYNPPnlrRT8WmK6&sharer_shareinfo=d0608897ca2217c7386725563d344704&sharer_shareinfo_first=d0608897ca2217c7386725563d344704))
@@ -18,6 +19,7 @@ Updated: 2026-07-09 01:49:40
 - [x] 2026-07-03 — [Chamath：The Great Descent 总结](summaries/2026-07/2026-07-03-chamath-the-great-descent.summary.md) ([source](https://x.com/chamath/status/2072618494324027489?s=52))
 #### 其他
 
+- [x] 2026-07-10 — [访谈 Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.zh.md) / [EN: Interview With Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.md) ([source](https://alexalejandre.com/programming/interview-with-mitchell-hashimoto/))
 - [x] 2026-07-08 — [My Dishonest Benchmark — 中文摘要](summaries/2026-07/2026-07-08-my-dishonest-benchmark.summary.md) ([source](https://drunkdba.medium.com/my-dishonest-benchmark-b52d2e706b59))
 - [x] 2026-07-08 — [Automating away — 中文摘要](summaries/2026-07/2026-07-08-automating-away.summary.md) ([source](https://replicated.live/blog/away))
 - [x] 2026-07-07 — [Should DayQuil be legal? — 中文摘要](summaries/2026-07/2026-07-07-should-dayquil-be-legal.summary.md) ([source](https://www.theargumentmag.com/p/should-dayquil-be-legal))
