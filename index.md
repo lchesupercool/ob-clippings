@@ -1,6 +1,6 @@
 # Clippings Index
 
-Updated: 2026-07-11 03:30:40
+Updated: 2026-07-12 05:11:02
 
 ## 2026-07
 
@@ -10,6 +10,7 @@ Updated: 2026-07-11 03:30:40
 - [x] 2026-07-03 — [Postgres 事务是分布式系统的超能力](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.zh.md) / [EN: Postgres Transactions are a Distributed Systems…](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.md) ([source](https://www.dbos.dev/blog/co-locating-workflow-state-with-your-data))
 #### AI / LLM / Agent
 
+- [x] 2026-07-11 — [提示词编写（Prompting）](2026-07/2026-07-11-chatgpt-learn-prompting.zh.md) / [EN: Prompting](2026-07/2026-07-11-chatgpt-learn-prompting.md) ([source](https://learn.chatgpt.com/docs/prompting))
 - [x] 2026-07-10 — [真正工程师使用的 Skills](2026-07/2026-07-10-github-mattpocock-skills.zh.md) / [EN: Skills For Real Engineers](2026-07/2026-07-10-github-mattpocock-skills.md) ([source](https://github.com/mattpocock/skills))
 - [x] 2026-07-08 — [Pulpie：用于清洗 Web 的 Pareto 最优模型 — 中文摘要](summaries/2026-07/2026-07-08-pulpie-pareto-optimal-models-for-cleaning-the-web.summary.md) ([source](https://usefeyn.com/blog/pulpie-pareto-optimal-models-for-cleaning-the-web/))
 - [x] 2026-07-07 — [通过 Harness 工程实现 AI 自我提升 — 中文摘要](summaries/2026-07/2026-07-07-harness-engineering-self-improvement.summary.md) ([source](https://mp.weixin.qq.com/s/kZrryL8_fxfq2pSFw6LSqg))
