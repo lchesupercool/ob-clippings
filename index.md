@@ -1,6 +1,6 @@
 # Clippings Index
 
-Updated: 2026-07-12 05:11:02
+Updated: 2026-07-13 05:10:36
 
 ## 2026-07
 
@@ -10,6 +10,7 @@ Updated: 2026-07-12 05:11:02
 - [x] 2026-07-03 — [Postgres 事务是分布式系统的超能力](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.zh.md) / [EN: Postgres Transactions are a Distributed Systems…](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.md) ([source](https://www.dbos.dev/blog/co-locating-workflow-state-with-your-data))
 #### AI / LLM / Agent
 
+- [x] 2026-07-11 — [深度用好 AI 的实用方法](2026-07/2026-07-12-jike-deep-ai-use-methods.md) ([source](https://m.okjike.com/originalPosts/6a52323f81a29f181febe9bc?s=ewoidSI6ICI1ZWUwYWMyYzMxMGY4NDAwMTczNjkyMDgiCn0=))
 - [x] 2026-07-11 — [提示词编写（Prompting）](2026-07/2026-07-11-chatgpt-learn-prompting.zh.md) / [EN: Prompting](2026-07/2026-07-11-chatgpt-learn-prompting.md) ([source](https://learn.chatgpt.com/docs/prompting))
 - [x] 2026-07-10 — [真正工程师使用的 Skills](2026-07/2026-07-10-github-mattpocock-skills.zh.md) / [EN: Skills For Real Engineers](2026-07/2026-07-10-github-mattpocock-skills.md) ([source](https://github.com/mattpocock/skills))
 - [x] 2026-07-08 — [Pulpie：用于清洗 Web 的 Pareto 最优模型 — 中文摘要](summaries/2026-07/2026-07-08-pulpie-pareto-optimal-models-for-cleaning-the-web.summary.md) ([source](https://usefeyn.com/blog/pulpie-pareto-optimal-models-for-cleaning-the-web/))
@@ -18,6 +19,7 @@ Updated: 2026-07-12 05:11:02
 #### 个人成长 / 学习 / 生活
 
 - [x] 2026-07-03 — [Chamath：The Great Descent 总结](summaries/2026-07/2026-07-03-chamath-the-great-descent.summary.md) ([source](https://x.com/chamath/status/2072618494324027489?s=52))
+- [x] 2026-07-02 — [理解是新的瓶颈](2026-07/2026-07-12-geoffrey-litt-understanding-is-the-new-bottleneck.zh.md) / [EN: Understanding is the new bottleneck](2026-07/2026-07-12-geoffrey-litt-understanding-is-the-new-bottleneck.md) ([source](https://www.geoffreylitt.com/2026/07/02/understanding-is-the-new-bottleneck))
 #### 其他
 
 - [x] 2026-07-10 — [访谈 Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.zh.md) / [EN: Interview With Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.md) ([source](https://alexalejandre.com/programming/interview-with-mitchell-hashimoto/))
