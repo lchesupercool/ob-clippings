@@ -1,6 +1,6 @@
 # Clippings Index
 
-Updated: 2026-07-13 05:10:36
+Updated: 2026-07-14 06:01:08
 
 ## 2026-07
 
@@ -10,18 +10,23 @@ Updated: 2026-07-13 05:10:36
 - [x] 2026-07-03 — [Postgres 事务是分布式系统的超能力](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.zh.md) / [EN: Postgres Transactions are a Distributed Systems…](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.md) ([source](https://www.dbos.dev/blog/co-locating-workflow-state-with-your-data))
 #### AI / LLM / Agent
 
+- [x] 2026-07-13 — [ChatGPT Prompting 指南：从描述结果到可验证交付](summaries/2026-07/2026-07-13-chatgpt-learn-prompting.summary.md) ([source](https://learn.chatgpt.com/docs/prompting))
 - [x] 2026-07-11 — [深度用好 AI 的实用方法](2026-07/2026-07-12-jike-deep-ai-use-methods.md) ([source](https://m.okjike.com/originalPosts/6a52323f81a29f181febe9bc?s=ewoidSI6ICI1ZWUwYWMyYzMxMGY4NDAwMTczNjkyMDgiCn0=))
 - [x] 2026-07-11 — [提示词编写（Prompting）](2026-07/2026-07-11-chatgpt-learn-prompting.zh.md) / [EN: Prompting](2026-07/2026-07-11-chatgpt-learn-prompting.md) ([source](https://learn.chatgpt.com/docs/prompting))
 - [x] 2026-07-10 — [真正工程师使用的 Skills](2026-07/2026-07-10-github-mattpocock-skills.zh.md) / [EN: Skills For Real Engineers](2026-07/2026-07-10-github-mattpocock-skills.md) ([source](https://github.com/mattpocock/skills))
 - [x] 2026-07-08 — [Pulpie：用于清洗 Web 的 Pareto 最优模型 — 中文摘要](summaries/2026-07/2026-07-08-pulpie-pareto-optimal-models-for-cleaning-the-web.summary.md) ([source](https://usefeyn.com/blog/pulpie-pareto-optimal-models-for-cleaning-the-web/))
 - [x] 2026-07-07 — [通过 Harness 工程实现 AI 自我提升 — 中文摘要](summaries/2026-07/2026-07-07-harness-engineering-self-improvement.summary.md) ([source](https://mp.weixin.qq.com/s/kZrryL8_fxfq2pSFw6LSqg))
 - [x] 2026-07-06 — [Claude工程师终于交出Fable 5焚诀！教你打破和模型之间的信息差](2026-07/2026-07-06-claude-fable-5-unknowns-jqzhixin.md) ([source](https://mp.weixin.qq.com/s?__biz=MzA3MzI4MjgzMw==&mid=2651042720&idx=1&sn=d906c197f96af8e07e57e74c70a41480&chksm=850238f45fc05aaebc001d45dfc6a2a340911e576ac0e0db4aabe6970b1183f4a4b71c757fa3&mpshare=1&scene=1&srcid=0705SzmnhNYNPPnlrRT8WmK6&sharer_shareinfo=d0608897ca2217c7386725563d344704&sharer_shareinfo_first=d0608897ca2217c7386725563d344704))
+#### 编程 / 工程实践
+
+- [x] 2026-07-13 — [掌控想法，而非代码](2026-07/2026-07-13-antirez-control-the-ideas-not-the-code.zh.md) / [EN: Control the ideas, not the code](2026-07/2026-07-13-antirez-control-the-ideas-not-the-code.md) ([source](https://antirez.com/news/169))
 #### 个人成长 / 学习 / 生活
 
 - [x] 2026-07-03 — [Chamath：The Great Descent 总结](summaries/2026-07/2026-07-03-chamath-the-great-descent.summary.md) ([source](https://x.com/chamath/status/2072618494324027489?s=52))
 - [x] 2026-07-02 — [理解是新的瓶颈](2026-07/2026-07-12-geoffrey-litt-understanding-is-the-new-bottleneck.zh.md) / [EN: Understanding is the new bottleneck](2026-07/2026-07-12-geoffrey-litt-understanding-is-the-new-bottleneck.md) ([source](https://www.geoffreylitt.com/2026/07/02/understanding-is-the-new-bottleneck))
 #### 其他
 
+- [x] 2026-07-12 — [逆向信息悖论](2026-07/2026-07-13-satya-nadella-reverse-information-paradox.zh.md) / [EN: The Reverse Information Paradox](2026-07/2026-07-13-satya-nadella-reverse-information-paradox.md) ([source](https://x.com/satyanadella/status/2076323181154230284?s=52))
 - [x] 2026-07-10 — [访谈 Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.zh.md) / [EN: Interview With Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.md) ([source](https://alexalejandre.com/programming/interview-with-mitchell-hashimoto/))
 - [x] 2026-07-08 — [My Dishonest Benchmark — 中文摘要](summaries/2026-07/2026-07-08-my-dishonest-benchmark.summary.md) ([source](https://drunkdba.medium.com/my-dishonest-benchmark-b52d2e706b59))
 - [x] 2026-07-08 — [Automating away — 中文摘要](summaries/2026-07/2026-07-08-automating-away.summary.md) ([source](https://replicated.live/blog/away))
@@ -29,6 +34,7 @@ Updated: 2026-07-13 05:10:36
 - [x] 2026-07-03 — [这四个工作习惯，或许也能帮你找到掌控感 — 摘要](summaries/2026-07/2026-07-03-sspai-four-work-habits-control.summary.md) ([source](https://sspai.com/post/111708))
 - [x] 2026-07-03 — [这四个工作习惯，或许也能帮你找到掌控感](2026-07/2026-07-03-sspai-four-work-habits-control.md) ([source](https://sspai.com/post/111708))
 - [x] 2026-07-03 — [Fable 田野指南：发现你的未知项](2026-07/2026-07-05-a-field-guide-to-fable-finding-your-unknowns.zh.md) / [EN: A Field Guide to Fable: Finding Your Unknowns](2026-07/2026-07-05-a-field-guide-to-fable-finding-your-unknowns.md) ([source](https://x.com/trq212/status/2073100352921215386))
+- [x] 2026-05-20 — [我如何重新学会阅读](2026-07/2026-07-13-how-i-learned-to-read-again.zh.md) / [EN: How I Learned to Read Again](2026-07/2026-07-13-how-i-learned-to-read-again.md) ([source](https://substack.magazinenongrata.com/p/how-i-learned-to-read-again))
 - [x] 2024-09-23 — [基于栈的迭代式 DFS 图遍历](2026-07/2026-07-03-dfs-iterative-stack-based.zh.md) / [EN: Iterative DFS with stack-based graph traversal](2026-07/2026-07-03-dfs-iterative-stack-based.md) ([source](https://dwf.dev/blog/2024/09/23/2024/dfs-iterative-stack-based/))
 ## 2026-06
 
