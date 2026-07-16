@@ -1,6 +1,6 @@
 # Clippings Index
 
-Updated: 2026-07-15 07:00:08
+Updated: 2026-07-16 03:10:21
 
 ## 2026-07
 
@@ -10,6 +10,9 @@ Updated: 2026-07-15 07:00:08
 - [x] 2026-07-03 — [Postgres 事务是分布式系统的超能力](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.zh.md) / [EN: Postgres Transactions are a Distributed Systems…](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.md) ([source](https://www.dbos.dev/blog/co-locating-workflow-state-with-your-data))
 #### AI / LLM / Agent
 
+- [ ] 2026-07-15 — [/last7days：Fable 5 和 GPT-5.6](2026-07/2026-07-15-mvanhorn-last7days-fable-5-gpt-5p6.zh.md) / [EN: /last7days of Fable 5 and GPT-5.6](2026-07/2026-07-15-mvanhorn-last7days-fable-5-gpt-5p6.md) ([source](https://x.com/mvanhorn/status/2077510447016890433?s=52))
+- [x] 2026-07-15 — [GPT-5.6 Sol 提示词指南](2026-07/2026-07-15-openai-prompt-guidance-gpt-5p6.zh.md) / [EN: Prompting guidance for GPT-5.6 Sol](2026-07/2026-07-15-openai-prompt-guidance-gpt-5p6.md) ([source](https://developers.openai.com/api/docs/guides/prompt-guidance-gpt-5p6))
+- [x] 2026-07-14 — [是否把太多思考外包给了 AI？](summaries/2026-07/2026-07-15-artfish-offloading-thinking-to-ai.summary.md) ([source](https://www.artfish.ai/p/offloading-thinking-to-ai))
 - [x] 2026-07-13 — [ChatGPT Prompting 指南：从描述结果到可验证交付](summaries/2026-07/2026-07-13-chatgpt-learn-prompting.summary.md) ([source](https://learn.chatgpt.com/docs/prompting))
 - [x] 2026-07-11 — [深度用好 AI 的实用方法](2026-07/2026-07-12-jike-deep-ai-use-methods.md) ([source](https://m.okjike.com/originalPosts/6a52323f81a29f181febe9bc?s=ewoidSI6ICI1ZWUwYWMyYzMxMGY4NDAwMTczNjkyMDgiCn0=))
 - [x] 2026-07-11 — [提示词编写（Prompting）](2026-07/2026-07-11-chatgpt-learn-prompting.zh.md) / [EN: Prompting](2026-07/2026-07-11-chatgpt-learn-prompting.md) ([source](https://learn.chatgpt.com/docs/prompting))
