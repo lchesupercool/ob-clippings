@@ -1,6 +1,6 @@
 # Clippings Index
 
-Updated: 2026-07-16 03:10:21
+Updated: 2026-07-17
 
 ## 2026-07
 
@@ -10,7 +10,9 @@ Updated: 2026-07-16 03:10:21
 - [x] 2026-07-03 — [Postgres 事务是分布式系统的超能力](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.zh.md) / [EN: Postgres Transactions are a Distributed Systems…](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.md) ([source](https://www.dbos.dev/blog/co-locating-workflow-state-with-your-data))
 #### AI / LLM / Agent
 
-- [ ] 2026-07-15 — [/last7days：Fable 5 和 GPT-5.6](2026-07/2026-07-15-mvanhorn-last7days-fable-5-gpt-5p6.zh.md) / [EN: /last7days of Fable 5 and GPT-5.6](2026-07/2026-07-15-mvanhorn-last7days-fable-5-gpt-5p6.md) ([source](https://x.com/mvanhorn/status/2077510447016890433?s=52))
+- [ ] 2026-07-17 — [Pydantic：人在回路中，已经累了｜总结](summaries/2026-07/2026-07-17-pydantic-human-in-the-loop-is-tired.summary.md) ([source](https://pydantic.dev/articles/the-human-in-the-loop-is-tired))
+- [ ] 2026-02-18 — [人在回路中，已经累了](2026-07/2026-02-18-the-human-in-the-loop-is-tired.zh.md) / [EN: The Human-in-the-Loop is Tired](2026-07/2026-02-18-the-human-in-the-loop-is-tired.md) ([source](https://pydantic.dev/articles/the-human-in-the-loop-is-tired))
+
 - [x] 2026-07-15 — [GPT-5.6 Sol 提示词指南](2026-07/2026-07-15-openai-prompt-guidance-gpt-5p6.zh.md) / [EN: Prompting guidance for GPT-5.6 Sol](2026-07/2026-07-15-openai-prompt-guidance-gpt-5p6.md) ([source](https://developers.openai.com/api/docs/guides/prompt-guidance-gpt-5p6))
 - [x] 2026-07-14 — [是否把太多思考外包给了 AI？](summaries/2026-07/2026-07-15-artfish-offloading-thinking-to-ai.summary.md) ([source](https://www.artfish.ai/p/offloading-thinking-to-ai))
 - [x] 2026-07-13 — [ChatGPT Prompting 指南：从描述结果到可验证交付](summaries/2026-07/2026-07-13-chatgpt-learn-prompting.summary.md) ([source](https://learn.chatgpt.com/docs/prompting))
@@ -29,6 +31,7 @@ Updated: 2026-07-16 03:10:21
 - [x] 2026-07-02 — [理解是新的瓶颈](2026-07/2026-07-12-geoffrey-litt-understanding-is-the-new-bottleneck.zh.md) / [EN: Understanding is the new bottleneck](2026-07/2026-07-12-geoffrey-litt-understanding-is-the-new-bottleneck.md) ([source](https://www.geoffreylitt.com/2026/07/02/understanding-is-the-new-bottleneck))
 #### 其他
 
+- [x] 2026-07-15 — [/last7days：Fable 5 和 GPT-5.6，数千个赞同票说明真正有效的方法](2026-07/2026-07-15-mvanhorn-last7days-fable-5-gpt-5p6.zh.md) / [EN: /last7days of Fable 5 and GPT-5.6: What Thousan…](2026-07/2026-07-15-mvanhorn-last7days-fable-5-gpt-5p6.md) ([source](https://x.com/mvanhorn/status/2077510447016890433?s=52))
 - [x] 2026-07-12 — [逆向信息悖论](2026-07/2026-07-13-satya-nadella-reverse-information-paradox.zh.md) / [EN: The Reverse Information Paradox](2026-07/2026-07-13-satya-nadella-reverse-information-paradox.md) ([source](https://x.com/satyanadella/status/2076323181154230284?s=52))
 - [x] 2026-07-10 — [访谈 Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.zh.md) / [EN: Interview With Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.md) ([source](https://alexalejandre.com/programming/interview-with-mitchell-hashimoto/))
 - [x] 2026-07-08 — [My Dishonest Benchmark — 中文摘要](summaries/2026-07/2026-07-08-my-dishonest-benchmark.summary.md) ([source](https://drunkdba.medium.com/my-dishonest-benchmark-b52d2e706b59))
