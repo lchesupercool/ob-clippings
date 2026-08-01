@@ -1,6 +1,6 @@
 # Clippings Index
 
-Updated: 2026-07-17
+Updated: 2026-08-01 06:01:04
 
 ## 2026-07
 
@@ -8,10 +8,11 @@ Updated: 2026-07-17
 
 - [x] 2026-07-05 — [页级别的 VACUUM](2026-07/2026-07-06-vacuum-at-the-page-level.zh.md) / [EN: VACUUM at the Page Level](2026-07/2026-07-06-vacuum-at-the-page-level.md) ([source](https://boringsql.com/posts/vacuum-at-the-page-level/))
 - [x] 2026-07-03 — [Postgres 事务是分布式系统的超能力](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.zh.md) / [EN: Postgres Transactions are a Distributed Systems…](2026-07/2026-07-03-co-locating-workflow-state-with-your-data.md) ([source](https://www.dbos.dev/blog/co-locating-workflow-state-with-your-data))
+- [x] 2026-06-02 — [Postgres 队列确实可以扩展](2026-07/2026-07-31-making-postgres-queues-scale.zh.md) / [EN: Postgres Queues Actually Scale](2026-07/2026-07-31-making-postgres-queues-scale.md) ([source](https://www.dbos.dev/blog/making-postgres-queues-scale))
+- [x] 2026-05-14 — [Chapter 59. Writing a Custom Scan Provider](2026-07/Chapter%2059.%20Writing%20a%20Custom%20Scan%20Provider.md) ([source](https://www.postgresql.org/docs/17/custom-scan.html))
+- [x] 2026-05-14 — [59.1. Creating Custom Scan Paths](2026-07/59.1.%20Creating%20Custom%20Scan%20Paths.md) ([source](https://www.postgresql.org/docs/17/custom-scan-path.html))
+- [x] 2026-05-14 — [59.1. 创建自定义扫描路径](2026-07/59.1.%20%E5%88%9B%E5%BB%BA%E8%87%AA%E5%AE%9A%E4%B9%89%E6%89%AB%E6%8F%8F%E8%B7%AF%E5%BE%84.md) ([source](https://www.postgresql.org/docs/17/custom-scan-path.html))
 #### AI / LLM / Agent
-
-- [ ] 2026-07-17 — [Pydantic：人在回路中，已经累了｜总结](summaries/2026-07/2026-07-17-pydantic-human-in-the-loop-is-tired.summary.md) ([source](https://pydantic.dev/articles/the-human-in-the-loop-is-tired))
-- [ ] 2026-02-18 — [人在回路中，已经累了](2026-07/2026-02-18-the-human-in-the-loop-is-tired.zh.md) / [EN: The Human-in-the-Loop is Tired](2026-07/2026-02-18-the-human-in-the-loop-is-tired.md) ([source](https://pydantic.dev/articles/the-human-in-the-loop-is-tired))
 
 - [x] 2026-07-15 — [GPT-5.6 Sol 提示词指南](2026-07/2026-07-15-openai-prompt-guidance-gpt-5p6.zh.md) / [EN: Prompting guidance for GPT-5.6 Sol](2026-07/2026-07-15-openai-prompt-guidance-gpt-5p6.md) ([source](https://developers.openai.com/api/docs/guides/prompt-guidance-gpt-5p6))
 - [x] 2026-07-14 — [是否把太多思考外包给了 AI？](summaries/2026-07/2026-07-15-artfish-offloading-thinking-to-ai.summary.md) ([source](https://www.artfish.ai/p/offloading-thinking-to-ai))
@@ -31,6 +32,9 @@ Updated: 2026-07-17
 - [x] 2026-07-02 — [理解是新的瓶颈](2026-07/2026-07-12-geoffrey-litt-understanding-is-the-new-bottleneck.zh.md) / [EN: Understanding is the new bottleneck](2026-07/2026-07-12-geoffrey-litt-understanding-is-the-new-bottleneck.md) ([source](https://www.geoffreylitt.com/2026/07/02/understanding-is-the-new-bottleneck))
 #### 其他
 
+- [x] 2026-07-29 — [中译-59.1. Creating Custom Scan Paths](2026-07/%E4%B8%AD%E8%AF%91-59.1.%20Creating%20Custom%20Scan%20Paths.md)
+- [x] 2026-07-17 — [人在回路中，已经累了｜内容总结](summaries/2026-07/2026-07-17-pydantic-human-in-the-loop-is-tired.summary.md) ([source](https://pydantic.dev/articles/the-human-in-the-loop-is-tired))
+- [x] 2026-07-17 — [人在回路中，已经累了](2026-07/2026-02-18-the-human-in-the-loop-is-tired.zh.md) / [EN: The Human-in-the-Loop is Tired](2026-07/2026-02-18-the-human-in-the-loop-is-tired.md) ([source](https://pydantic.dev/articles/the-human-in-the-loop-is-tired))
 - [x] 2026-07-15 — [/last7days：Fable 5 和 GPT-5.6，数千个赞同票说明真正有效的方法](2026-07/2026-07-15-mvanhorn-last7days-fable-5-gpt-5p6.zh.md) / [EN: /last7days of Fable 5 and GPT-5.6: What Thousan…](2026-07/2026-07-15-mvanhorn-last7days-fable-5-gpt-5p6.md) ([source](https://x.com/mvanhorn/status/2077510447016890433?s=52))
 - [x] 2026-07-12 — [逆向信息悖论](2026-07/2026-07-13-satya-nadella-reverse-information-paradox.zh.md) / [EN: The Reverse Information Paradox](2026-07/2026-07-13-satya-nadella-reverse-information-paradox.md) ([source](https://x.com/satyanadella/status/2076323181154230284?s=52))
 - [x] 2026-07-10 — [访谈 Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.zh.md) / [EN: Interview With Mitchell Hashimoto](2026-07/2026-07-10-interview-with-mitchell-hashimoto.md) ([source](https://alexalejandre.com/programming/interview-with-mitchell-hashimoto/))
