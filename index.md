@@ -1,7 +1,12 @@
 # Clippings Index
 
-Updated: 2026-08-01 06:01:04
+Updated: 2026-08-06 06:01:06
 
+## 2026-08
+
+#### AI / LLM / Agent
+
+- [x] 2026-05-26 — [软件工程与生成式 AI 的八大迷思](2026-08/2026-08-05-eight-myths-software-engineering-genai.zh.md) / [EN: Eight Myths on Software Engineering and GenAI](2026-08/2026-08-05-eight-myths-software-engineering-genai.md) ([source](https://queue.acm.org/detail.cfm?id=3807963))
 ## 2026-07
 
 #### 数据库 / PostgreSQL
