@@ -1,11 +1,12 @@
 # Clippings Index
 
-Updated: 2026-08-06 06:01:06
+Updated: 2026-08-15 04:55:56
 
 ## 2026-08
 
 #### AI / LLM / Agent
 
+- [x] 2026-08-09 — [我如何使用 LLM 学习复杂主题](2026-08/2026-08-10-how-i-use-llms-to-learn-complex-topics.zh.md) / [EN: How I use LLMs to learn complex topics](2026-08/2026-08-10-how-i-use-llms-to-learn-complex-topics.md) ([source](https://laurentiugabriel.github.io/blog/articles/how-i-use-llms-to-learn/))
 - [x] 2026-05-26 — [软件工程与生成式 AI 的八大迷思](2026-08/2026-08-05-eight-myths-software-engineering-genai.zh.md) / [EN: Eight Myths on Software Engineering and GenAI](2026-08/2026-08-05-eight-myths-software-engineering-genai.md) ([source](https://queue.acm.org/detail.cfm?id=3807963))
 ## 2026-07
 
