@@ -1,6 +1,6 @@
 # Clippings Index
 
-Updated: 2026-08-17 01:30:40
+Updated: 2026-08-19 05:11:45
 
 ## 2026-08
 
@@ -10,6 +10,7 @@ Updated: 2026-08-17 01:30:40
 - [x] 2026-05-26 — [软件工程与生成式 AI 的八大迷思](2026-08/2026-08-05-eight-myths-software-engineering-genai.zh.md) / [EN: Eight Myths on Software Engineering and GenAI](2026-08/2026-08-05-eight-myths-software-engineering-genai.md) ([source](https://queue.acm.org/detail.cfm?id=3807963))
 #### 其他
 
+- [ ] 2026-08-17 — [分享我知识管理 12 年来最重要的经验：INL 结构](2026-08/2026-08-18-sspai-inl-knowledge-management.md) ([source](https://sspai.com/post/113368))
 - [ ] 2026-07-31 — [DuckDB 中的异步 I/O：工作、线程、再工作](2026-08/2026-08-16-asynchronous-io-in-duckdb.zh.md) / [EN: Asynchronous I/O in DuckDB: Work, Thread, Work](2026-08/2026-08-16-asynchronous-io-in-duckdb.md) ([source](https://duckdb.org/2026/07/31/asynchronous-io))
 ## 2026-07
 
