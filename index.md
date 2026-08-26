@@ -1,13 +1,18 @@
 # Clippings Index
 
-Updated: 2026-08-19 05:11:45
+Updated: 2026-08-26 04:00:36
 
 ## 2026-08
 
 #### AI / LLM / Agent
 
+- [ ] 2026-08-26 — [Create a symlink from AGENTS.md to CLAUDE.md](2026-08/%E4%B8%AD%E8%AF%91-A%20Complete%20Guide%20To%20AGENTS.md)
 - [x] 2026-08-09 — [我如何使用 LLM 学习复杂主题](2026-08/2026-08-10-how-i-use-llms-to-learn-complex-topics.zh.md) / [EN: How I use LLMs to learn complex topics](2026-08/2026-08-10-how-i-use-llms-to-learn-complex-topics.md) ([source](https://laurentiugabriel.github.io/blog/articles/how-i-use-llms-to-learn/))
 - [x] 2026-05-26 — [软件工程与生成式 AI 的八大迷思](2026-08/2026-08-05-eight-myths-software-engineering-genai.zh.md) / [EN: Eight Myths on Software Engineering and GenAI](2026-08/2026-08-05-eight-myths-software-engineering-genai.md) ([source](https://queue.acm.org/detail.cfm?id=3807963))
+- [ ] 2026-01-18 — [A Complete Guide To AGENTS.md](2026-08/A%20Complete%20Guide%20To%20AGENTS.md) ([source](https://www.aihero.dev/a-complete-guide-to-agents-md))
+#### 个人成长 / 学习 / 生活
+
+- [ ] 2026-08-14 — [Understanding is the new bottleneck](2026-08/Understanding%20is%20the%20new%20bottleneck.md) ([source](https://www.geoffreylitt.com/2026/07/02/understanding-is-the-new-bottleneck))
 #### 其他
 
 - [ ] 2026-08-17 — [分享我知识管理 12 年来最重要的经验：INL 结构](2026-08/2026-08-18-sspai-inl-knowledge-management.md) ([source](https://sspai.com/post/113368))
