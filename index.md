@@ -1,9 +1,12 @@
 # Clippings Index
 
-Updated: 2026-09-14 00:10:46
+Updated: 2026-09-16 00:10:00
 
 ## 2026-09
 
+#### AI / LLM / Agent
+
+- [ ] 2026-09-11 — [重新思考 GPT-6 Astra 的 Skills 与提示词](2026-09/2026-09-15-rethinking-skills-and-prompts-for-gpt-6-astra.zh.md) / [EN: Rethinking skills and prompts for GPT-6 Astra](2026-09/2026-09-15-rethinking-skills-and-prompts-for-gpt-6-astra.md) ([source](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra))
 #### 其他
 
 - [ ] 2026-09-12 — [想成功，你就得敢于妄想](2026-09/2026-09-13-you-need-to-be-delusional-if-you-want-to-succeed.zh.md) / [EN: You need to be delusional if you want to succeed](2026-09/2026-09-13-you-need-to-be-delusional-if-you-want-to-succeed.md) ([source](https://x.com/thedankoe/status/2098813973714149757))
