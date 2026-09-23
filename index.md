@@ -1,11 +1,12 @@
 # Clippings Index
 
-Updated: 2026-09-16 00:10:00
+Updated: 2026-09-23 00:10:03
 
 ## 2026-09
 
 #### AI / LLM / Agent
 
+- [ ] 2026-09-21 — [关于 TypeSafe 编码智能体的一些思考](2026-09/2026-09-22-thoughts-on-a-typesafe-coding-agent.zh.md) / [EN: [public] thoughts on a typesafe coding agent](2026-09/2026-09-22-thoughts-on-a-typesafe-coding-agent.md) ([source](https://x.com/completeskeptic/status/2101894250401271876?s=52))
 - [ ] 2026-09-11 — [重新思考 GPT-6 Astra 的 Skills 与提示词](2026-09/2026-09-15-rethinking-skills-and-prompts-for-gpt-6-astra.zh.md) / [EN: Rethinking skills and prompts for GPT-6 Astra](2026-09/2026-09-15-rethinking-skills-and-prompts-for-gpt-6-astra.md) ([source](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra))
 #### 其他
 
